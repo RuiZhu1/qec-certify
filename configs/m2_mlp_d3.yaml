@@ -17,6 +17,7 @@ model:
   batch_size: 1024
   learning_rate: 0.001
 train_sizes: [1000, 10000, 100000, 1000000]
+repeats: 5  # independent training sets and network seeds per cell
 val_shots: 100000
 test_shots: 100000
 confidence: 0.95

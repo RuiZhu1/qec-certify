@@ -94,7 +94,7 @@ def test_learned_decoder_cannot_beat_exact_ml_and_gets_close(d3):
     assert exact <= optimum * 1.05
 
 
-def test_run_mlp_experiment_report():
+def _tiny_config(**overrides):
     config = {
         "name": "test",
         "seed": 1,
@@ -103,21 +103,48 @@ def test_run_mlp_experiment_report():
         "memory_basis": "Z",
         "model": {"type": "mlp", "hidden_sizes": [16], "epochs": 3, "batch_size": 256},
         "train_sizes": [500, 2000],
+        "repeats": 2,
         "val_shots": 500,
         "test_shots": 1000,
         "confidence": 0.95,
     }
-    report = run_mlp_experiment(config)
+    config.update(overrides)
+    return config
+
+
+def test_run_mlp_experiment_report():
+    report = run_mlp_experiment(_tiny_config())
     (entry,) = report["results"]
     refs = entry["references"]
     assert refs["ml_exact"]["exact_ler"] <= refs["mwpm"]["exact_ler"]
-    assert [row["train_shots"] for row in entry["mlp"]] == [500, 2000]
-    for row in entry["mlp"]:
-        assert row["exact_ler"] >= refs["ml_exact"]["exact_ler"] - 1e-12
-        assert row["gap_ratio"] >= 1.0 - 1e-12
-        assert row["ci_low"] <= row["ler"] <= row["ci_high"]
-        assert 1 <= row["best_epoch"] <= 3
+    assert [agg["train_shots"] for agg in entry["mlp"]] == [500, 2000]
+    for agg in entry["mlp"]:
+        assert agg["repeats"] == 2
+        assert len(agg["runs"]) == 2
+        assert len({run["repeat"] for run in agg["runs"]}) == 2
+        stats = agg["gap_ratio"]
+        assert stats["min"] <= stats["mean"] <= stats["max"]
+        assert stats["std"] >= 0
+        for run in agg["runs"]:
+            assert run["exact_ler"] >= refs["ml_exact"]["exact_ler"] - 1e-12
+            assert run["gap_ratio"] >= 1.0 - 1e-12
+            assert run["ci_low"] <= run["ler"] <= run["ci_high"]
+            assert 1 <= run["best_epoch"] <= 3
+    assert len(entry["seeds"]["train"]) == 2
     assert "torch" in report["versions"]
+
+
+def test_repeat_zero_matches_a_single_repeat_run():
+    single = run_mlp_experiment(_tiny_config(repeats=1))
+    multi = run_mlp_experiment(_tiny_config(repeats=2))
+    for a, b in zip(single["results"][0]["mlp"], multi["results"][0]["mlp"], strict=True):
+        assert a["runs"][0]["exact_ler"] == b["runs"][0]["exact_ler"]
+        assert a["runs"][0]["num_errors"] == b["runs"][0]["num_errors"]
+
+
+def test_repeats_must_be_positive():
+    with pytest.raises(ValueError, match="repeats"):
+        run_mlp_experiment(_tiny_config(repeats=0))
 
 
 def test_run_mlp_experiment_rejects_unknown_model():
