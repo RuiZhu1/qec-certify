@@ -19,6 +19,8 @@ from __future__ import annotations
 import argparse
 import json
 import statistics
+import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -146,6 +148,13 @@ def run_mlp_experiment(config: dict[str, Any]) -> dict[str, Any]:
                     history=decoder.history,
                 )
                 runs[n].append(row)
+                print(
+                    f"[{config.get('name', '?')}] p={p} repeat={repeat + 1}/{repeats} "
+                    f"train={n}: exact G={row['gap_ratio']:.3f} "
+                    f"(MWPM {exact_mwpm / exact_ml:.3f}, {time.strftime('%H:%M:%S')})",
+                    file=sys.stderr,
+                    flush=True,
+                )
         results.append(
             {
                 "p": p,
