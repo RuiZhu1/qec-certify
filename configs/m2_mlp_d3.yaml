@@ -1,0 +1,22 @@
+# M2: MLP decoder vs. Tier 0 (MWPM) and Tier 1 (exact ML) on the d=3 rotated surface code,
+# code-capacity i.i.d. depolarizing noise, Z-basis memory. One MLP per (p, train size).
+name: m2_mlp_d3
+seed: 20260930
+code:
+  family: rotated_surface
+  distance: 3
+noise:
+  model: depolarizing
+  p: [0.01, 0.02, 0.05, 0.1, 0.15]
+memory_basis: Z
+model:
+  type: mlp
+  hidden_sizes: [64, 64]
+  epochs: 20
+  min_steps: 4000  # small training sets get extra epochs, so they are not merely under-trained
+  batch_size: 1024
+  learning_rate: 0.001
+train_sizes: [1000, 10000, 100000, 1000000]
+val_shots: 100000
+test_shots: 100000
+confidence: 0.95
