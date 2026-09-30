@@ -1,0 +1,14 @@
+# M1: MWPM vs exact ML on the d=5 repetition code under code-capacity depolarizing noise.
+# For i.i.d. noise on an odd-distance repetition code, MWPM is already ML.
+name: m1_repetition_d5_depolarizing
+seed: 20260930
+code:
+  family: repetition
+  distance: 5
+noise:
+  model: depolarizing
+  p: [0.01, 0.05, 0.1, 0.2]
+memory_basis: Z
+shots: 100000
+confidence: 0.95
+decoders: [mwpm, ml_exact]

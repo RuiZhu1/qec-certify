@@ -1,0 +1,14 @@
+# M1: Tier 0 (MWPM) and Tier 1 (exact ML) baselines, d=3 rotated surface code,
+# code-capacity i.i.d. depolarizing noise, Z-basis memory.
+name: m1_d3_depolarizing
+seed: 20260930
+code:
+  family: rotated_surface
+  distance: 3
+noise:
+  model: depolarizing
+  p: [0.01, 0.02, 0.05, 0.1, 0.15]
+memory_basis: Z
+shots: 100000
+confidence: 0.95
+decoders: [mwpm, ml_exact]
