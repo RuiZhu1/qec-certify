@@ -1,0 +1,16 @@
+# M1 extension: Tier 0 (MWPM, correlated MWPM) against Tier 1 exact ML beyond the full
+# table, d=3 to 11 rotated surface code, code-capacity i.i.d. depolarizing noise, Z-basis
+# memory. Exact ML here is SweepMLDecoder (one exact contraction per shot), so LERs are
+# sampled; G compares decoders on the same shots.
+name: m1_scaling_depolarizing
+seed: 20260930
+code:
+  family: rotated_surface
+  distance: [3, 5, 7, 9, 11]
+noise:
+  model: depolarizing
+  p: [0.05, 0.08, 0.1, 0.12, 0.15]
+memory_basis: Z
+shots: 200000
+confidence: 0.95
+decoders: [mwpm, mwpm_correlated, ml_sweep]

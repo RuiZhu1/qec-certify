@@ -6,7 +6,7 @@ from qec_certify.decoders import ExactMLDecoder
 from qec_certify.decoders.nn import MLPConfig, MLPDecoder
 from qec_certify.eval.exact import exact_logical_error_rate
 from qec_certify.sim import sample_syndromes
-from qec_certify.train.run import run_mlp_experiment
+from qec_certify.train.run import format_report, run_mlp_experiment
 
 SMALL = MLPConfig(hidden_sizes=(32,), epochs=8, batch_size=256, seed=3)
 
@@ -132,6 +132,13 @@ def test_run_mlp_experiment_report():
             assert 1 <= run["best_epoch"] <= 3
     assert len(entry["seeds"]["train"]) == 2
     assert "torch" in report["versions"]
+    assert set(refs) == {"mwpm", "mwpm_correlated", "ml_exact"}
+    assert [agg["train_shots"] for agg in entry["lookup"]] == [500, 2000]
+    for agg in entry["lookup"]:
+        assert agg["repeats"] == 2
+        for run in agg["runs"]:
+            assert run["exact_ler"] >= refs["ml_exact"]["exact_ler"] - 1e-12
+    assert "lookup" in format_report(report)
 
 
 def test_repeat_zero_matches_a_single_repeat_run():

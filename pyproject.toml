@@ -12,7 +12,7 @@ license-files = ["LICENSE"]
 requires-python = ">=3.10"
 dependencies = [
     "stim>=1.13",
-    "pymatching>=2.2",
+    "pymatching>=2.4",  # correlated matching (enable_correlations)
     "numpy>=1.24",
     "scipy>=1.10",
     "torch>=2.2",

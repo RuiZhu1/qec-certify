@@ -8,6 +8,11 @@ ones. Because ``d=3`` and ``d=5`` have few detectors, every decoder's LER is als
 *exactly* (by decoding all ``2^D`` syndromes), so the gap to optimal carries no sampling
 noise. Sampled test LERs with Wilson intervals are reported alongside.
 
+Every MLP is paired with a lookup table fitted on the same training shots (majority vote per
+seen syndrome, MWPM elsewhere). Matching the lookup table shows that the MLP memorises the
+training data; beating it shows that it generalises to syndromes it has not seen. The
+references are MWPM, correlated MWPM and exact ML.
+
 Usage::
 
     python -m qec_certify.train.run --config configs/m2_mlp_d3.yaml \
@@ -21,16 +26,24 @@ import json
 import statistics
 import sys
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pymatching
 import stim
 import torch
 
 import qec_certify
 from qec_certify.codes import code_capacity_circuit, make_code
-from qec_certify.decoders import ExactMLDecoder, MWPMDecoder
+from qec_certify.decoders import (
+    Decoder,
+    ExactMLDecoder,
+    LookupTableDecoder,
+    MWPMDecoder,
+    TableDecoder,
+)
 from qec_certify.decoders.ml_exact import DEFAULT_MAX_BITS, syndrome_class_distribution
 from qec_certify.decoders.nn import MLPConfig, MLPDecoder
 from qec_certify.eval.exact import exact_logical_error_rate
@@ -39,6 +52,7 @@ from qec_certify.sim import SyndromeData, sample_syndromes
 from qec_certify.utils import git_commit_hash, load_config, spawn_seeds, split_seeds
 
 GAP_TOLERANCE = 1e-12
+REFERENCE_LABELS = (("mwpm", "MWPM"), ("mwpm_correlated", "corr. MWPM"), ("ml_exact", "exact ML"))
 
 
 def _mlp_config(model: dict[str, Any], seed: int) -> MLPConfig:
@@ -71,6 +85,34 @@ def _aggregate(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "gap_closed": _summary(closed) if len(closed) == len(rows) else None,
         "runs": rows,
     }
+
+
+@dataclass(frozen=True)
+class _Scorer:
+    """Scores a trained decoder against the references of one noise strength."""
+
+    test: SyndromeData
+    dem: stim.DetectorErrorModel
+    joint: np.ndarray
+    exact_mwpm: float
+    exact_ml: float
+    confidence: float
+
+    def score(self, decoder: Decoder, train_shots: int, repeat: int) -> dict[str, Any]:
+        row = evaluate_decoder(decoder, self.test, self.confidence).to_dict()
+        exact = exact_logical_error_rate(decoder, self.dem, joint=self.joint)
+        row.update(
+            train_shots=train_shots,
+            repeat=repeat,
+            exact_ler=exact,
+            gap_ratio=gap_ratio(exact, self.exact_ml),
+            gap_closed=(
+                gap_closed(self.exact_mwpm, exact, self.exact_ml)
+                if abs(self.exact_mwpm - self.exact_ml) > GAP_TOLERANCE
+                else None
+            ),
+        )
+        return row
 
 
 def run_mlp_experiment(config: dict[str, Any]) -> dict[str, Any]:
@@ -109,8 +151,12 @@ def run_mlp_experiment(config: dict[str, Any]) -> dict[str, Any]:
         test = sample_syndromes(circuit, int(config["test_shots"]), test_seeds[j])
 
         references: dict[str, Any] = {}
+        # MWPM is frozen into a table over all syndromes: it is the fallback of every lookup
+        # table, whose exact LER needs the fallback on all 2^D syndromes.
+        mwpm = TableDecoder.from_decoder(MWPMDecoder.from_circuit(circuit), max_detectors=max_bits)
         decoders = {
-            "mwpm": MWPMDecoder.from_circuit(circuit),
+            "mwpm": mwpm,
+            "mwpm_correlated": MWPMDecoder.from_circuit(circuit, correlated=True),
             "ml_exact": ExactMLDecoder.from_circuit(circuit, max_bits=max_bits),
         }
         for name, decoder in decoders.items():
@@ -120,27 +166,23 @@ def run_mlp_experiment(config: dict[str, Any]) -> dict[str, Any]:
         exact_mwpm = references["mwpm"]["exact_ler"]
         exact_ml = references["ml_exact"]["exact_ler"]
 
+        scorer = _Scorer(test, dem, joint, exact_mwpm, exact_ml, confidence)
+
         runs: dict[int, list[dict[str, Any]]] = {n: [] for n in train_sizes}
+        lookup_runs: dict[int, list[dict[str, Any]]] = {n: [] for n in train_sizes}
         for repeat in range(repeats):
             train = sample_syndromes(circuit, max(train_sizes), train_seeds[repeat * count + j])
             for n in train_sizes:
+                head = _head(train, n)
+                lookup = LookupTableDecoder(dem.num_detectors, dem.num_observables, mwpm)
+                lookup_runs[n].append(scorer.score(lookup.fit(head), n, repeat))
                 decoder = MLPDecoder(
                     dem.num_detectors,
                     dem.num_observables,
                     _mlp_config(model_cfg, seed=config["seed"] + repeat),
-                ).fit(_head(train, n), val)
-                row = evaluate_decoder(decoder, test, confidence).to_dict()
-                exact = exact_logical_error_rate(decoder, dem, joint=joint)
+                ).fit(head, val)
+                row = scorer.score(decoder, n, repeat)
                 row.update(
-                    train_shots=n,
-                    repeat=repeat,
-                    exact_ler=exact,
-                    gap_ratio=gap_ratio(exact, exact_ml),
-                    gap_closed=(
-                        gap_closed(exact_mwpm, exact, exact_ml)
-                        if abs(exact_mwpm - exact_ml) > GAP_TOLERANCE
-                        else None
-                    ),
                     best_epoch=min(
                         decoder.history,
                         key=lambda h: float("inf") if h["val_loss"] is None else h["val_loss"],
@@ -151,7 +193,8 @@ def run_mlp_experiment(config: dict[str, Any]) -> dict[str, Any]:
                 print(
                     f"[{config.get('name', '?')}] p={p} repeat={repeat + 1}/{repeats} "
                     f"train={n}: exact G={row['gap_ratio']:.3f} "
-                    f"(MWPM {exact_mwpm / exact_ml:.3f}, {time.strftime('%H:%M:%S')})",
+                    f"(lookup {lookup_runs[n][-1]['gap_ratio']:.3f}, "
+                    f"MWPM {exact_mwpm / exact_ml:.3f}, {time.strftime('%H:%M:%S')})",
                     file=sys.stderr,
                     flush=True,
                 )
@@ -165,6 +208,7 @@ def run_mlp_experiment(config: dict[str, Any]) -> dict[str, Any]:
                 },
                 "references": references,
                 "mlp": [_aggregate(runs[n]) for n in train_sizes],
+                "lookup": [_aggregate(lookup_runs[n]) for n in train_sizes],
             }
         )
 
@@ -184,30 +228,34 @@ def run_mlp_experiment(config: dict[str, Any]) -> dict[str, Any]:
 def format_report(report: dict[str, Any]) -> str:
     """Exact LERs and gap metrics. ``gap closed`` is 0 for MWPM and 1 for exact ML.
 
-    MLP rows show the mean over repeats; ``G`` also gives the standard deviation and range.
+    Lookup-table and MLP rows show the mean over repeats; ``G`` also gives the standard
+    deviation and range.
     """
     lines = [
-        f"{'p':>7}  {'decoder':<9} {'train':>8}  {'exact LER':>10}  "
+        f"{'p':>7}  {'decoder':<10} {'train':>8}  {'exact LER':>10}  "
         f"{'G = LER / LER_ML  (mean +- std, [min, max])':<46}  {'gap closed':>10}"
     ]
     for entry in report["results"]:
         refs = entry["references"]
         ml = refs["ml_exact"]["exact_ler"]
-        for name, label in (("mwpm", "MWPM"), ("ml_exact", "exact ML")):
+        for name, label in REFERENCE_LABELS:
+            if name not in refs:
+                continue
             exact = refs[name]["exact_ler"]
             lines.append(
-                f"{entry['p']:>7g}  {label:<9} {'-':>8}  {exact:>10.3e}  "
+                f"{entry['p']:>7g}  {label:<10} {'-':>8}  {exact:>10.3e}  "
                 f"{exact / ml:<46.3f}  {'-':>10}"
             )
-        for agg in entry["mlp"]:
-            g = agg["gap_ratio"]
-            closed = agg["gap_closed"]
-            spread = f"{g['mean']:.3f} +- {g['std']:.3f}  [{g['min']:.3f}, {g['max']:.3f}]"
-            lines.append(
-                f"{entry['p']:>7g}  {'MLP':<9} {agg['train_shots']:>8}  "
-                f"{agg['exact_ler']['mean']:>10.3e}  {spread:<46}  "
-                f"{'n/a' if closed is None else format(closed['mean'], '.3f'):>10}"
-            )
+        for key, label in (("lookup", "lookup"), ("mlp", "MLP")):
+            for agg in entry.get(key, []):
+                g = agg["gap_ratio"]
+                closed = agg["gap_closed"]
+                spread = f"{g['mean']:.3f} +- {g['std']:.3f}  [{g['min']:.3f}, {g['max']:.3f}]"
+                lines.append(
+                    f"{entry['p']:>7g}  {label:<10} {agg['train_shots']:>8}  "
+                    f"{agg['exact_ler']['mean']:>10.3e}  {spread:<46}  "
+                    f"{'n/a' if closed is None else format(closed['mean'], '.3f'):>10}"
+                )
     return "\n".join(lines)
 
 

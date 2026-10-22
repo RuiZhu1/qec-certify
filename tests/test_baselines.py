@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from qec_certify.eval.baselines import main, run_baselines
+from qec_certify.eval.baselines import format_report, main, run_baselines
 from qec_certify.utils import load_config
 
 CONFIG_DIR = Path(__file__).resolve().parents[1] / "configs"
@@ -41,6 +41,42 @@ def test_run_baselines_is_reproducible():
     assert run_baselines(small_config())["results"] == run_baselines(small_config())["results"]
 
 
+def test_list_of_distances_and_all_decoders():
+    config = small_config(
+        code={"family": "rotated_surface", "distance": [3, 5]},
+        noise={"model": "depolarizing", "p": 0.1},
+        decoders=["mwpm", "mwpm_correlated", "ml_sweep"],
+    )
+    report = run_baselines(config)
+    assert [entry["distance"] for entry in report["results"]] == [3, 5]
+    for entry in report["results"]:
+        assert set(entry["decoders"]) == {"mwpm", "mwpm_correlated", "ml_sweep"}
+        assert entry["decoders"]["ml_sweep"]["frontier"] <= entry["distance"] + 3
+    assert "ml_sweep" in format_report(report)
+
+
+def test_first_distance_keeps_single_distance_seeds():
+    decoders = ["mwpm", "ml_sweep"]
+    single = run_baselines(small_config(decoders=decoders))
+    multi = run_baselines(
+        small_config(code={"family": "rotated_surface", "distance": [3, 5]}, decoders=decoders)
+    )
+    assert multi["results"][: len(single["results"])] == single["results"]
+
+
+def test_sweep_and_table_ml_agree_on_shots():
+    report = run_baselines(small_config(decoders=["ml_exact", "ml_sweep"]))
+    for entry in report["results"]:
+        rows = entry["decoders"]
+        # Same decisions, ties included, so the same failures on the same shots.
+        assert rows["ml_exact"]["num_errors"] == rows["ml_sweep"]["num_errors"]
+
+
+def test_workers_do_not_change_results():
+    config = small_config(decoders=["mwpm", "ml_sweep"])
+    assert run_baselines(config, workers=2)["results"] == run_baselines(config)["results"]
+
+
 def test_run_baselines_rejects_unknown_settings():
     with pytest.raises(ValueError, match="noise model"):
         run_baselines(small_config(noise={"model": "biased", "p": 0.1}))
@@ -52,6 +88,9 @@ def test_run_baselines_rejects_unknown_settings():
 def test_shipped_m1_configs_run(path):
     config = load_config(path)
     config["shots"] = 200
+    distances = config["code"]["distance"]
+    if isinstance(distances, list):  # smoke test: the smallest codes are enough
+        config["code"]["distance"] = distances[:2]
     assert run_baselines(config)["results"]
 
 

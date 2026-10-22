@@ -5,9 +5,16 @@ import pytest
 import stim
 
 from qec_certify.codes import code_capacity_circuit, repetition_code, rotated_surface_code
-from qec_certify.decoders import Decoder, ExactMLDecoder, MWPMDecoder
+from qec_certify.decoders import Decoder, ExactMLDecoder, MWPMDecoder, SweepMLDecoder
 
-DECODER_CLASSES = [MWPMDecoder, ExactMLDecoder]
+
+class CorrelatedMWPM(MWPMDecoder):
+    @classmethod
+    def from_circuit(cls, circuit):
+        return super().from_circuit(circuit, correlated=True)
+
+
+DECODER_CLASSES = [MWPMDecoder, CorrelatedMWPM, ExactMLDecoder, SweepMLDecoder]
 
 
 def single_qubit_error_cases(code, basis):

@@ -29,3 +29,29 @@ def test_repetition_code_is_minimum_weight():
     # iff c has weight above d // 2.
     c = np.cumsum(np.concatenate([np.zeros((len(dets), 1), bool), dets], axis=1), axis=1) % 2
     np.testing.assert_array_equal(decoder.predict(dets)[:, 0], c.sum(axis=1) > d // 2)
+
+
+def test_correlated_matches_raw_pymatching():
+    circuit = code_capacity_circuit(rotated_surface_code(5), 0.08)
+    dem = circuit.detector_error_model(decompose_errors=True)
+    data = sample_syndromes(circuit, 5000, seed=11)
+    expected = pymatching.Matching.from_detector_error_model(
+        dem, enable_correlations=True
+    ).decode_batch(data.detection_events, enable_correlations=True)
+    decoder = MWPMDecoder.from_circuit(circuit, correlated=True)
+    assert decoder.correlated
+    np.testing.assert_array_equal(decoder.predict(data.detection_events), expected.astype(bool))
+
+
+def test_correlated_matching_beats_plain_matching_on_d5():
+    """Using the Y-error correlation helps MWPM at d=5: paired comparison on the same shots."""
+    circuit = code_capacity_circuit(rotated_surface_code(5), 0.1)
+    data = sample_syndromes(circuit, 50_000, seed=12)
+
+    def wrong(decoder):
+        return np.any(decoder.predict(data.detection_events) != data.observable_flips, axis=1)
+
+    plain = wrong(MWPMDecoder.from_circuit(circuit))
+    correlated = wrong(MWPMDecoder.from_circuit(circuit, correlated=True))
+    discordant = int(np.sum(plain != correlated))
+    assert plain.sum() - correlated.sum() > 3 * np.sqrt(discordant)

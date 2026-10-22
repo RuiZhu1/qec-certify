@@ -38,8 +38,9 @@ This project connects the two:
 
 | Tier | Reference | Scope | Meaning |
 |------|-----------|-------|---------|
-| 0 | MWPM (PyMatching), optionally belief-matching / BP+OSD | All sizes | Practical baseline |
-| 1 | Exact maximum-likelihood decoder | Small codes (d=3, 5; repetition and rotated surface code, code-capacity first) | True optimum on tractable instances |
+| 0 | MWPM and correlated MWPM (PyMatching), optionally belief-matching / BP+OSD | All sizes | Practical baseline |
+| 0 | Empirical lookup table (majority vote per seen syndrome, MWPM elsewhere) | Same data as the learned decoder | Floor for learned decoders: memorisation without generalisation |
+| 1 | Exact maximum-likelihood decoder: full syndrome table (d=3, 5), or one exact DEM contraction per shot (code capacity up to d≈11) | Small to moderate codes, code-capacity first | True optimum on tractable instances |
 | 2 | Analytic or information-theoretic bounds | Model-dependent | Certificates (research goal) |
 
 ### 3.2 Learned decoders
@@ -96,8 +97,10 @@ qec-certify/
 │   ├── noise/                  # noise models + descriptors
 │   ├── sim/                    # Stim wrappers, dataset generation
 │   ├── decoders/
-│   │   ├── mwpm.py             # PyMatching wrapper
-│   │   ├── ml_exact.py         # exact ML decoder for small codes
+│   │   ├── mwpm.py             # PyMatching wrapper (plain and correlated matching)
+│   │   ├── lookup.py           # empirical lookup-table decoder
+│   │   ├── ml_exact.py         # exact ML decoder for small codes (full syndrome table)
+│   │   ├── ml_sweep.py         # exact ML per shot by sweeping the DEM (moderate codes)
 │   │   ├── nn/                 # mlp.py, gnn.py, transformer.py, recurrent.py
 │   ├── bounds/                 # information-theoretic / analytic bounds
 │   ├── train/                  # training loops, configs
@@ -151,18 +154,19 @@ pip install -e ".[dev]"
 Core dependencies: `stim`, `pymatching`, `numpy`, `scipy`, `torch`, `pyyaml`, `matplotlib`, `pytest`.
 Optional: `jax` (alternative model backend), `ldpc` (BP+OSD baseline), `quimb` or similar (tensor-network reference).
 
-## 7. Quickstart (target interface)
+## 7. Quickstart
 
 ```bash
-# 1. Generate data and evaluate baselines
+# 1. Generate data and evaluate baselines (MWPM, correlated MWPM, exact ML)
 python -m qec_certify.eval.baselines --config configs/m1_d3_depolarizing.yaml
+python -m qec_certify.eval.baselines --config configs/m1_scaling_depolarizing.yaml --workers 8
 
-# 2. Train a transformer decoder
-python -m qec_certify.train.run --config configs/m2_transformer_d3.yaml
-
-# 3. Compute gap-to-optimal report
-python -m qec_certify.eval.report --run runs/m2_transformer_d3
+# 2. Train MLP decoders and report their exact gap to optimal, next to a lookup table
+python -m qec_certify.train.run --config configs/m2_mlp_d3.yaml --out runs/m2_mlp_d3
 ```
+
+Planned: transformer decoders (`configs/m2_transformer_d3.yaml`) and a separate report
+command (`python -m qec_certify.eval.report`).
 
 ## 8. Reproducibility and scientific standards
 

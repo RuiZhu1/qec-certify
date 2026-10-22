@@ -26,6 +26,10 @@ from qec_certify.decoders.base import Decoder
 from qec_certify.utils.bits import pack_bits, unpack_bits
 
 DEFAULT_MAX_BITS = 26
+# Classes whose probabilities agree to this relative tolerance are tied, and the smallest
+# class index wins. Exact ties (common under symmetric noise such as depolarizing) are
+# otherwise broken by rounding, so the decision would depend on the order of operations.
+TIE_RTOL = 1e-9
 
 
 def error_mechanisms(dem: stim.DetectorErrorModel) -> tuple[np.ndarray, list[int]]:
@@ -138,8 +142,9 @@ def pauli_bruteforce_distribution(
 class ExactMLDecoder(Decoder):
     """Exact maximum-likelihood decoder over logical classes, as a syndrome lookup table.
 
-    For every syndrome ``s`` it predicts ``argmax_l P(s, l)``. Ties, including syndromes of
-    probability zero, go to the smallest class index (no flip first).
+    For every syndrome ``s`` it predicts ``argmax_l P(s, l)``. Ties (classes within
+    ``TIE_RTOL`` of the maximum), including syndromes of probability zero, go to the smallest
+    class index (no flip first).
 
     Attributes:
         lookup_table: Predicted class (packed observable flips) for each packed syndrome.
@@ -162,11 +167,10 @@ class ExactMLDecoder(Decoder):
             raise ValueError(f"method must be 'dp' or 'enumerate', got {method!r}")
         self.num_detectors = dem.num_detectors
         self.num_observables = dem.num_observables
-        table = np.argmax(joint, axis=0)
+        best = joint.max(axis=0)
+        table = np.argmax(joint >= best * (1.0 - TIE_RTOL), axis=0)
         self.lookup_table = table.astype(np.min_scalar_type(joint.shape[0] - 1))
-        self.optimal_logical_error_rate = float(
-            (joint.sum(axis=0) - joint[table, np.arange(joint.shape[1])]).sum()
-        )
+        self.optimal_logical_error_rate = float((joint.sum(axis=0) - best).sum())
 
     @classmethod
     def from_circuit(cls, circuit: stim.Circuit, **kwargs) -> ExactMLDecoder:
