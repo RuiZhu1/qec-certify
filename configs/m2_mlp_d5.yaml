@@ -1,0 +1,25 @@
+# M2: MLP decoder vs. Tier 0 (MWPM) and Tier 1 (exact ML) on the d=5 rotated surface code,
+# code-capacity i.i.d. depolarizing noise, Z-basis memory. Exact ML is still tractable:
+# 24 detectors + 1 observable = 25 bits, a 2^25 float64 table (about 270 MB).
+name: m2_mlp_d5
+seed: 20260930
+code:
+  family: rotated_surface
+  distance: 5
+noise:
+  model: depolarizing
+  p: [0.01, 0.02, 0.05, 0.1, 0.15]
+memory_basis: Z
+max_bits: 25
+model:
+  type: mlp
+  hidden_sizes: [128, 128]
+  epochs: 20
+  min_steps: 4000  # small training sets get extra epochs, so they are not merely under-trained
+  batch_size: 1024
+  learning_rate: 0.001
+train_sizes: [10000, 100000, 1000000]
+repeats: 3  # independent training sets and network seeds per cell
+val_shots: 100000
+test_shots: 100000
+confidence: 0.95

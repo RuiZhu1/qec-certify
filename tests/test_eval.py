@@ -93,3 +93,18 @@ def test_gap_metrics():
         gap_ratio(0.1, 0.0)
     with pytest.raises(ValueError):
         gap_closed(0.02, 0.01, 0.02)
+
+
+def test_exact_ler_is_independent_of_chunking_and_reuses_joint():
+    from qec_certify.codes import make_code
+    from qec_certify.decoders import MWPMDecoder
+    from qec_certify.decoders.ml_exact import syndrome_class_distribution
+
+    circuit = code_capacity_circuit(make_code("rotated_surface", 3), 0.05, "Z")
+    dem = circuit.detector_error_model()
+    decoder = MWPMDecoder.from_circuit(circuit)
+    reference = exact_logical_error_rate(decoder, dem)
+    joint = syndrome_class_distribution(dem, max_bits=22)
+    assert exact_logical_error_rate(decoder, dem, joint=joint, chunk_size=7) == pytest.approx(
+        reference, rel=1e-12
+    )
