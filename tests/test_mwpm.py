@@ -1,8 +1,11 @@
 import numpy as np
 import pymatching
+import pytest
 
 from qec_certify.codes import code_capacity_circuit, repetition_code, rotated_surface_code
-from qec_certify.decoders import MWPMDecoder
+from qec_certify.decoders import ExactMLDecoder, MWPMDecoder
+from qec_certify.eval import exact_logical_error_rate
+from qec_certify.noise import BiasedPauli, CorrelatedPairs
 from qec_certify.sim import sample_syndromes
 
 
@@ -55,3 +58,38 @@ def test_correlated_matching_beats_plain_matching_on_d5():
     correlated = wrong(MWPMDecoder.from_circuit(circuit, correlated=True))
     discordant = int(np.sum(plain != correlated))
     assert plain.sum() - correlated.sum() > 3 * np.sqrt(discordant)
+
+
+@pytest.mark.parametrize("correlated", [False, True])
+@pytest.mark.parametrize("noise", [0.08, BiasedPauli(0.08, 10)], ids=str)
+@pytest.mark.parametrize("d", [3, 5, 7])
+def test_single_qubit_noise_needs_no_relabelling(d, noise, correlated):
+    circuit = code_capacity_circuit(rotated_surface_code(d), noise, "X")
+    assert MWPMDecoder.from_circuit(circuit, correlated=correlated).relabelled_edges == 0
+
+
+@pytest.mark.parametrize("correlated", [False, True])
+@pytest.mark.parametrize("basis", ["X", "Z"])
+def test_correlated_noise_still_corrects_every_single_qubit_error(basis, correlated):
+    """Regression: rare two-qubit components used to relabel boundary edges, so MWPM failed
+    on single-qubit errors and did worse than no correction at all."""
+    from test_decoders import single_qubit_error_cases
+
+    code = rotated_surface_code(3)
+    circuit = code_capacity_circuit(code, CorrelatedPairs(0.08, 0.05), basis)
+    decoder = MWPMDecoder.from_circuit(circuit, correlated=correlated)
+    assert decoder.relabelled_edges > 0
+    dets, obs = single_qubit_error_cases(code, basis)
+    np.testing.assert_array_equal(decoder.predict(dets), obs)
+
+
+def test_weak_correlation_barely_changes_the_gap():
+    """Exact LERs: a little correlated noise moves MWPM's gap to ML only a little."""
+    code = rotated_surface_code(3)
+    gaps = []
+    for noise in (CorrelatedPairs(0.08, 0.0), CorrelatedPairs(0.08, 0.05)):
+        circuit = code_capacity_circuit(code, noise)
+        dem = circuit.detector_error_model()
+        mwpm = exact_logical_error_rate(MWPMDecoder.from_circuit(circuit), dem)
+        gaps.append(mwpm / ExactMLDecoder(dem).optimal_logical_error_rate)
+    assert gaps[1] == pytest.approx(gaps[0], rel=0.05)

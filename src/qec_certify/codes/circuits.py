@@ -5,16 +5,20 @@ from __future__ import annotations
 import stim
 
 from qec_certify.codes.base import StabilizerCode
+from qec_certify.noise.models import NoiseModel, as_noise_model
 
 
-def code_capacity_circuit(code: StabilizerCode, p: float, basis: str = "Z") -> stim.Circuit:
-    """One-shot memory experiment under code-capacity i.i.d. depolarizing noise.
+def code_capacity_circuit(
+    code: StabilizerCode, noise: float | NoiseModel, basis: str = "Z"
+) -> stim.Circuit:
+    """One-shot memory experiment under code-capacity noise.
 
-    Every operation except the noise layer is ideal:
+    ``noise`` is a :class:`~qec_certify.noise.NoiseModel`, or a probability ``p`` for
+    i.i.d. depolarizing noise. Every operation except the noise layer is ideal:
 
     1. Prepare each data qubit in the +1 eigenstate of ``basis``.
     2. Measure every stabilizer with ``MPP`` (projects onto the code space).
-    3. Apply ``DEPOLARIZE1(p)`` to every data qubit.
+    3. Apply the noise layer to the data qubits (``DEPOLARIZE1(p)`` for a probability).
     4. Measure every stabilizer again. Detector ``k`` compares the two outcomes of
        ``code.stabilizers[k]``.
     5. Measure every data qubit in ``basis``. Observable 0 is the logical operator of
@@ -25,8 +29,7 @@ def code_capacity_circuit(code: StabilizerCode, p: float, basis: str = "Z") -> s
     """
     if basis not in ("X", "Z"):
         raise ValueError(f"basis must be 'X' or 'Z', got {basis!r}")
-    if not 0.0 <= p <= 0.75:
-        raise ValueError(f"depolarizing probability must be in [0, 3/4], got {p}")
+    noise = as_noise_model(noise)
 
     n = code.num_data_qubits
     m = len(code.stabilizers)
@@ -39,7 +42,7 @@ def code_capacity_circuit(code: StabilizerCode, p: float, basis: str = "Z") -> s
     circuit.append("R" if basis == "Z" else "RX", data)
     circuit.append("MPP", stabilizer_targets)
     circuit.append("TICK")
-    circuit.append("DEPOLARIZE1", data, p)
+    noise.append_to(circuit, code)
     circuit.append("TICK")
     circuit.append("MPP", stabilizer_targets)
     for k, stab in enumerate(code.stabilizers):

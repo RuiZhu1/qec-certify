@@ -1,7 +1,10 @@
 """Evaluate the classical baseline decoders (Tier 0 MWPM, Tier 1 exact ML) from a config.
 
-``code.distance`` and ``noise.p`` may each be a single value or a list; every
-(distance, p) cell gets its own test shots, decoded by every configured decoder.
+``code.distance`` may be a single value or a list, and so may ``noise.p`` and the noise
+model's structure parameter (``noise.bias``, ``noise.correlation``; see
+:func:`qec_certify.noise.noise_grid`). Every (distance, noise model) cell gets its own test
+shots, decoded by every configured decoder. ``shots`` is a number, or a mapping from
+distance to number when large codes need fewer shots.
 
 Usage::
 
@@ -28,6 +31,7 @@ import qec_certify
 from qec_certify.codes import code_capacity_circuit, make_code
 from qec_certify.decoders import Decoder, ExactMLDecoder, MWPMDecoder, SweepMLDecoder
 from qec_certify.eval.metrics import evaluate_decoder
+from qec_certify.noise import NoiseModel, describe, noise_grid
 from qec_certify.sim import sample_syndromes
 from qec_certify.utils import git_commit_hash, load_config, spawn_seeds, split_seeds
 
@@ -45,26 +49,23 @@ def _as_list(value: Any) -> list[Any]:
 
 
 def run_baselines(config: dict[str, Any], workers: int = 1) -> dict[str, Any]:
-    """Sample test shots for every (distance, p) cell and evaluate each configured decoder.
+    """Sample test shots for every (distance, noise model) cell and evaluate each decoder.
 
     ``workers > 1`` evaluates cells in parallel processes; results do not depend on it.
     """
-    noise = config["noise"]
-    if noise["model"] != "depolarizing":
-        raise ValueError(f"unsupported noise model {noise['model']!r}; M1 supports 'depolarizing'")
     unknown = set(config["decoders"]) - set(DECODERS)
     if unknown:
         raise ValueError(f"unknown decoders {sorted(unknown)}; choose from {sorted(DECODERS)}")
 
     distances = _as_list(config["code"]["distance"])
-    probabilities = _as_list(noise["p"])
-    # Distance k takes test seeds [k * len(p), (k + 1) * len(p)), so a single-distance config
-    # keeps the seeds it had before lists of distances were allowed.
-    seeds = spawn_seeds(split_seeds(config["seed"])["test"], len(distances) * len(probabilities))
+    noises = noise_grid(config["noise"])
+    # Cell (distance k, noise j) takes test seed k * len(noises) + j. Depolarizing noise has
+    # one model per p, so its configs keep the seeds they had before structured noise.
+    seeds = spawn_seeds(split_seeds(config["seed"])["test"], len(distances) * len(noises))
     cells = [
-        (config, d, p, seeds[k * len(probabilities) + j])
+        (config, d, noise, seeds[k * len(noises) + j])
         for k, d in enumerate(distances)
-        for j, p in enumerate(probabilities)
+        for j, noise in enumerate(noises)
     ]
     if workers > 1:
         with ProcessPoolExecutor(max_workers=workers) as pool:
@@ -87,14 +88,30 @@ def run_baselines(config: dict[str, Any], workers: int = 1) -> dict[str, Any]:
     }
 
 
-def _run_cell(cell: tuple[dict[str, Any], int, float, int]) -> dict[str, Any]:
-    config, distance, p, seed = cell
+def _shots(config: dict[str, Any], distance: int) -> int:
+    shots = config["shots"]
+    if not isinstance(shots, dict):
+        return int(shots)
+    # YAML keeps integer keys; a JSON config turns them into strings.
+    return int(shots[distance] if distance in shots else shots[str(distance)])
+
+
+def _run_cell(cell: tuple[dict[str, Any], int, NoiseModel, int]) -> dict[str, Any]:
+    config, distance, noise, seed = cell
     code = make_code(config["code"]["family"], distance)
     basis = config.get("memory_basis", "Z")
     confidence = float(config.get("confidence", 0.95))
-    circuit = code_capacity_circuit(code, float(p), basis)
-    data = sample_syndromes(circuit, int(config["shots"]), seed)
-    entry: dict[str, Any] = {"distance": distance, "p": p, "seed": seed, "decoders": {}}
+    circuit = code_capacity_circuit(code, noise, basis)
+    data = sample_syndromes(circuit, _shots(config, distance), seed)
+    entry: dict[str, Any] = {
+        "distance": distance,
+        "p": noise.p,
+        "noise": noise.parameters(),
+        "descriptors": describe(noise, code),
+        "seed": seed,
+        "decoders": {},
+    }
+    label = " ".join(f"{k}={v}" for k, v in noise.parameters().items() if k != "model")
     for name in config["decoders"]:
         start = time.perf_counter()
         decoder = DECODERS[name](circuit).fit()
@@ -106,7 +123,7 @@ def _run_cell(cell: tuple[dict[str, Any], int, float, int]) -> dict[str, Any]:
             row["frontier"] = decoder.frontier
         entry["decoders"][name] = row
         print(
-            f"[{config.get('name', '?')}] d={distance} p={p} {name}: "
+            f"[{config.get('name', '?')}] d={distance} {label} {name}: "
             f"{row['num_errors']}/{row['shots']} in {seconds:.1f}s",
             file=sys.stderr,
             flush=True,
@@ -117,13 +134,19 @@ def _run_cell(cell: tuple[dict[str, Any], int, float, int]) -> dict[str, Any]:
 def format_report(report: dict[str, Any]) -> str:
     """Sampled LERs with Wilson intervals. ``G`` is the LER over the ML decoder's LER on the
     same shots (blank without an ML decoder or when it made no errors)."""
-    lines = [f"{'d':>3}  {'p':>6}  {'decoder':<16} {'errors/shots':>17}  {'LER':>10}  {'G':>6}  CI"]
+    lines = [
+        f"{'d':>3}  {'p':>6}  {'structure':<12} {'decoder':<16} {'errors/shots':>17}  "
+        f"{'LER':>10}  {'G':>6}  CI"
+    ]
     for entry in report["results"]:
         ml = next((entry["decoders"][n] for n in ML_DECODERS if n in entry["decoders"]), None)
+        structure = " ".join(
+            f"{k}={v:g}" for k, v in entry.get("noise", {}).items() if k not in ("model", "p")
+        )
         for name, row in entry["decoders"].items():
             g = row["ler"] / ml["ler"] if ml is not None and ml["num_errors"] else None
             lines.append(
-                f"{entry.get('distance', '-'):>3}  {entry['p']:>6g}  {name:<16} "
+                f"{entry.get('distance', '-'):>3}  {entry['p']:>6g}  {structure:<12} {name:<16} "
                 f"{row['num_errors']:>8}/{row['shots']:<8}  {row['ler']:>10.3e}  "
                 f"{'' if g is None else format(g, '.3f'):>6}  "
                 f"[{row['ci_low']:.3e}, {row['ci_high']:.3e}]"

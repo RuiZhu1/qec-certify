@@ -77,15 +77,43 @@ def test_workers_do_not_change_results():
     assert run_baselines(config, workers=2)["results"] == run_baselines(config)["results"]
 
 
+def test_structured_noise_grid_and_descriptors():
+    config = small_config(
+        noise={"model": "biased", "p": 0.1, "bias": [0.5, 10]},
+        memory_basis="X",
+        decoders=["mwpm", "ml_sweep"],
+    )
+    report = run_baselines(config)
+    assert [(e["distance"], e["noise"]["bias"]) for e in report["results"]] == [(3, 0.5), (3, 10)]
+    assert len({e["seed"] for e in report["results"]}) == 2
+    for entry in report["results"]:
+        assert entry["p"] == 0.1
+        assert entry["descriptors"]["bias"] == pytest.approx(entry["noise"]["bias"])
+    assert "bias=10" in format_report(report)
+
+
+def test_shots_per_distance():
+    config = small_config(
+        code={"family": "rotated_surface", "distance": [3, 5]},
+        noise={"model": "depolarizing", "p": 0.1},
+        shots={3: 300, "5": 100},
+        decoders=["mwpm"],
+    )
+    report = run_baselines(config)
+    assert [e["decoders"]["mwpm"]["shots"] for e in report["results"]] == [300, 100]
+
+
 def test_run_baselines_rejects_unknown_settings():
-    with pytest.raises(ValueError, match="noise model"):
+    with pytest.raises(ValueError, match="unknown noise model"):
+        run_baselines(small_config(noise={"model": "coherent", "p": 0.1}))
+    with pytest.raises(ValueError, match="needs its 'bias' parameter"):
         run_baselines(small_config(noise={"model": "biased", "p": 0.1}))
     with pytest.raises(ValueError, match="unknown decoders"):
         run_baselines(small_config(decoders=["mwpm", "transformer"]))
 
 
-@pytest.mark.parametrize("path", sorted(CONFIG_DIR.glob("m1_*.yaml")), ids=lambda p: p.name)
-def test_shipped_m1_configs_run(path):
+@pytest.mark.parametrize("path", sorted(CONFIG_DIR.glob("m[13]_*.yaml")), ids=lambda p: p.name)
+def test_shipped_baseline_configs_run(path):
     config = load_config(path)
     config["shots"] = 200
     distances = config["code"]["distance"]

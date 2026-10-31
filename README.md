@@ -94,7 +94,7 @@ qec-certify/
 │   └── experiment_log.md       # running log of results and negative results
 ├── src/qec_certify/
 │   ├── codes/                  # repetition, rotated surface code construction
-│   ├── noise/                  # noise models + descriptors
+│   ├── noise/                  # noise models (depolarizing, biased, correlated) + descriptors
 │   ├── sim/                    # Stim wrappers, dataset generation
 │   ├── decoders/
 │   │   ├── mwpm.py             # PyMatching wrapper (plain and correlated matching)
@@ -163,6 +163,13 @@ python -m qec_certify.eval.baselines --config configs/m1_scaling_depolarizing.ya
 
 # 2. Train MLP decoders and report their exact gap to optimal, next to a lookup table
 python -m qec_certify.train.run --config configs/m2_mlp_d3.yaml --out runs/m2_mlp_d3
+
+# 3. Structured noise (M3): the same baselines under biased and correlated noise
+python -m qec_certify.eval.baselines --config configs/m3_biased.yaml --out runs/m3_biased --workers 8
+python -m qec_certify.eval.baselines --config configs/m3_correlated.yaml --out runs/m3_correlated --workers 8
+
+# Figures: scripts in experiments/ read these outputs
+python experiments/plot_m3_structure.py runs/m3_biased/baselines.json runs/m3_correlated/baselines.json --out runs/m3_structure.png
 ```
 
 Planned: transformer decoders (`configs/m2_transformer_d3.yaml`) and a separate report

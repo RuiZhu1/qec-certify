@@ -1,0 +1,18 @@
+# M3: Tier 0 (MWPM, correlated MWPM) against Tier 1 exact ML under nearest-neighbour
+# correlated noise, rotated surface code, code capacity. correlation = fraction of a bulk
+# qubit's error probability p that comes from two-qubit depolarizing errors on neighbouring
+# pairs; 0 is depolarizing noise. Pairs of horizontal neighbours widen the exact-ML frontier
+# to about 2 d, so d stops at 7 and d=7 gets fewer shots.
+name: m3_correlated
+seed: 20260930
+code:
+  family: rotated_surface
+  distance: [3, 5, 7]
+noise:
+  model: correlated
+  p: 0.08
+  correlation: [0, 0.25, 0.5, 0.75, 1]
+memory_basis: Z
+shots: {3: 200000, 5: 200000, 7: 30000}
+confidence: 0.95
+decoders: [mwpm, mwpm_correlated, ml_sweep]

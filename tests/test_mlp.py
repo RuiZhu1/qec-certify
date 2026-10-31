@@ -64,6 +64,33 @@ def test_fit_does_not_touch_global_rng(d3):
     assert torch.equal(torch.rand(3), expected)
 
 
+def test_results_depend_on_configured_threads_only(d3):
+    """The thread count changes the last bits of the result, so the decoder pins its own:
+    ``MLPConfig.num_threads`` matters, the caller's global setting does not."""
+    import torch
+
+    circuit, dem = d3
+    data = sample_syndromes(circuit, 4096, seed=1)
+    events = np.random.default_rng(0).random((64, dem.num_detectors)) < 0.3
+
+    def proba(num_threads):
+        config = MLPConfig(
+            hidden_sizes=(64, 64), epochs=2, batch_size=1024, seed=3, num_threads=num_threads
+        )
+        decoder = MLPDecoder(dem.num_detectors, dem.num_observables, config).fit(data)
+        return decoder.predict_proba(events)
+
+    assert not np.array_equal(proba(1), proba(3))
+    previous = torch.get_num_threads()
+    results = []
+    for threads in (1, 3):
+        torch.set_num_threads(threads)
+        results.append(proba(1))
+        assert torch.get_num_threads() == threads
+    torch.set_num_threads(previous)
+    np.testing.assert_array_equal(results[0], results[1])
+
+
 def test_validation_selects_best_epoch(d3):
     circuit, dem = d3
     train = sample_syndromes(circuit, 2000, seed=1)

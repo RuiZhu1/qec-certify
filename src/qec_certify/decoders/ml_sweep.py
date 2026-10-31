@@ -21,6 +21,8 @@ is chosen among a few candidate sweeps to minimise ``w``.
 
 from __future__ import annotations
 
+import math
+
 import numpy as np
 import stim
 
@@ -53,9 +55,11 @@ def candidate_orders(dem: stim.DetectorErrorModel, masks: list[int]) -> list[lis
     """The DEM's own order, plus sweeps along the detector coordinate axes.
 
     Single-axis sweeps sort mechanisms by the smallest, mean or largest coordinate of the
-    detectors they flip. Two-axis sweeps sort by the rounded mean along one axis, then the
-    mean along another: for a 2-D code that is column by column, top to bottom within a
-    column, which keeps the frontier near ``d``. Mechanisms that flip no detector go first.
+    detectors they flip. Two-axis sweeps sort by the mean along one axis, rounded or
+    floored, then the mean along another: for a 2-D code that is column by column, top to
+    bottom within a column, which keeps the frontier near ``d`` for single-qubit noise
+    (rounding) and near ``2 d`` for errors on horizontally neighbouring qubits (flooring keeps
+    each pair with its left column). Mechanisms that flip no detector go first.
     """
     num_det = dem.num_detectors
     orders = [list(range(len(masks)))]
@@ -77,9 +81,15 @@ def candidate_orders(dem: stim.DetectorErrorModel, masks: list[int]) -> list[lis
             orders.append(sweep(lambda v, a=a, r=reduce: (float(r(v[:, a])),)))
         for b in range(num_axes):
             if b != a:
-                orders.append(
-                    sweep(lambda v, a=a, b=b: (round(v[:, a].mean()), float(v[:, b].mean())))
-                )
+                for snap in (round, math.floor):
+                    orders.append(
+                        sweep(
+                            lambda v, a=a, b=b, snap=snap: (
+                                snap(v[:, a].mean()),
+                                float(v[:, b].mean()),
+                            )
+                        )
+                    )
     return orders
 
 

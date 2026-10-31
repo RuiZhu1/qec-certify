@@ -14,8 +14,11 @@ its assumptions, and whether the bound is **exact**, **numerical** or **analytic
   `s` can have a lower logical error rate under that DEM.
 - **Kind.** Exact, up to float64 rounding. It is not a sampled estimate.
 - **Noise models covered.** Anything Stim can express as a DEM of independent mechanisms.
-  So far it has only been validated on code-capacity i.i.d. depolarizing noise, where the
-  DEM reproduces the Pauli channel exactly.
+  Validated on code-capacity depolarizing, biased Pauli and nearest-neighbour correlated
+  noise (`qec_certify.noise`), where the DEM reproduces the Pauli channels exactly: it
+  agrees with a composition of the models' own channel tables over all `4^n` Pauli errors
+  (`tests/test_noise.py`). Channels with no exact form as independent X, Y, Z errors (e.g.
+  biased noise with `eta = 0`) are rejected by Stim rather than approximated.
 - **Codes covered.** Limited by memory: `2^(D+L)` float64 entries for `D` detectors and
   `L` observables (the default cap is `D + L <= 26`). This includes the d=3 and d=5 rotated
   surface codes under code-capacity noise, and small repetition codes.
@@ -41,10 +44,13 @@ its assumptions, and whether the bound is **exact**, **numerical** or **analytic
   intervals; it is not an exact LER like `optimal_logical_error_rate`.
 - **Codes covered.** Cost per shot is `O(M 2^(w + L))` for frontier width `w`. For the
   rotated surface code under code-capacity noise a column-by-column sweep gives `w <= d + 3`
-  (tested for d=3 to 9), so d=11 costs about `2^15` numbers per shot.
+  (tested for d=3 to 9), so d=11 costs about `2^15` numbers per shot. Two-qubit errors on
+  horizontal neighbours tie three columns of checks together and widen the frontier to
+  about `2 d + 2` (12 at d=5, 16 at d=7), so correlated noise stops at d=7 in practice.
 - **Validation (tests/test_ml_sweep.py).** `log P(s, l)` agrees with the full table to
-  `1e-11` on every d=3 syndrome (both bases), on repetition codes and random DEMs, and on
-  sampled d=5 syndromes; decisions agree except on exact ties, where any choice is optimal.
+  `1e-11` on every d=3 syndrome (both bases, also under biased and correlated noise), on
+  repetition codes and random DEMs, and on sampled d=5 syndromes. With the shared tie rule
+  (`TIE_RTOL`) the two decoders make the same decision on every syndrome.
 - **Assumptions and caveats.** As for the table: the DEM must describe the noise, and
   optimality is relative to that DEM.
 

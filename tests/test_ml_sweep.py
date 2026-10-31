@@ -7,6 +7,7 @@ from qec_certify.codes import code_capacity_circuit, repetition_code, rotated_su
 from qec_certify.decoders import ExactMLDecoder, MWPMDecoder, SweepMLDecoder
 from qec_certify.decoders.ml_exact import error_mechanisms, syndrome_class_distribution
 from qec_certify.decoders.ml_sweep import candidate_orders, frontier_width
+from qec_certify.noise import BiasedPauli, CorrelatedPairs
 from qec_certify.sim import sample_syndromes
 from qec_certify.utils import pack_bits, unpack_bits
 
@@ -63,6 +64,22 @@ def test_matches_table_on_sampled_d5_syndromes():
     dem = circuit.detector_error_model()
     syndromes = np.unique(pack_bits(sample_syndromes(circuit, 3000, seed=5).detection_events))
     assert_matches_table(dem, syndromes)
+
+
+@pytest.mark.parametrize(
+    "noise", [BiasedPauli(0.1, 10), CorrelatedPairs(0.1, 0.5), CorrelatedPairs(0.1, 1.0)], ids=str
+)
+@pytest.mark.parametrize("basis", ["X", "Z"])
+def test_matches_table_under_structured_noise(noise, basis):
+    dem = code_capacity_circuit(rotated_surface_code(3), noise, basis).detector_error_model()
+    assert_matches_table(dem, np.arange(2**dem.num_detectors))
+
+
+@pytest.mark.parametrize("d", [3, 5, 7])
+def test_correlated_noise_frontier(d):
+    """Pairs of horizontal neighbours tie three columns of checks: the frontier is near 2 d."""
+    circuit = code_capacity_circuit(rotated_surface_code(d), CorrelatedPairs(0.1, 0.5))
+    assert SweepMLDecoder.from_circuit(circuit).frontier <= 2 * d + 2
 
 
 def test_impossible_and_untouched_detectors():

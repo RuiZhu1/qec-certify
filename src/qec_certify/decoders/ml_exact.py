@@ -13,7 +13,8 @@ probability, grouped by the XOR of the fired symptoms.
 ``O(M 2^M)``. The ML decoder then predicts ``argmax_l P(s, l)`` for every syndrome ``s``.
 
 :func:`pauli_bruteforce_distribution` recomputes ``P(s, l)`` from first principles for
-code-capacity depolarizing noise (all ``4^n`` Pauli errors), independently of Stim.
+code-capacity noise (all ``4^n`` Pauli errors, from the noise model's own channel tables),
+independently of Stim's conversion of the circuit into a DEM.
 """
 
 from __future__ import annotations
@@ -23,6 +24,7 @@ import stim
 
 from qec_certify.codes import StabilizerCode
 from qec_certify.decoders.base import Decoder
+from qec_certify.noise.models import Channel, NoiseModel, as_noise_model
 from qec_certify.utils.bits import pack_bits, unpack_bits
 
 DEFAULT_MAX_BITS = 26
@@ -109,13 +111,14 @@ def enumerate_syndrome_class_distribution(
 
 
 def pauli_bruteforce_distribution(
-    code: StabilizerCode, p: float, basis: str = "Z", *, max_qubits: int = 10
+    code: StabilizerCode, noise: float | NoiseModel, basis: str = "Z", *, max_qubits: int = 10
 ) -> np.ndarray:
     """``P(s, l)`` for :func:`~qec_certify.codes.code_capacity_circuit`, from Pauli errors.
 
-    Enumerates all ``4^n`` Pauli errors with weights ``(1 - p, p/3, p/3, p/3)`` per qubit.
-    Detector ``k`` fires iff the error anticommutes with stabilizer ``k``; the observable
-    flips iff it anticommutes with the logical operator of ``basis``.
+    Computes the probability of each of the ``4^n`` Pauli errors by composing the noise
+    model's channels (:func:`pauli_error_distribution`; a bare ``p`` means depolarizing
+    noise). Detector ``k`` fires iff the error anticommutes with stabilizer ``k``; the
+    observable flips iff it anticommutes with the logical operator of ``basis``.
     """
     n = code.num_data_qubits
     if n > max_qubits:
@@ -126,7 +129,7 @@ def pauli_bruteforce_distribution(
     configs = np.arange(4**n, dtype=np.int64)
     paulis = (configs[:, None] >> (2 * np.arange(n))) & 3
     x_part, z_part = paulis & 1, paulis >> 1
-    weights = np.prod(np.where(paulis == 0, 1.0 - p, p / 3.0), axis=1)
+    weights = pauli_error_distribution(as_noise_model(noise).channels(code), n)
 
     symptoms = np.zeros(len(configs), dtype=np.int64)
     for k, stab in enumerate(code.stabilizers):
@@ -137,6 +140,30 @@ def pauli_bruteforce_distribution(
 
     out = np.bincount(symptoms, weights=weights, minlength=2 ** (num_det + 1))
     return out.reshape(2, 2**num_det)
+
+
+def pauli_error_distribution(channels: list[Channel], num_qubits: int) -> np.ndarray:
+    """Probability of every ``num_qubits``-qubit Pauli error, indexed ``sum_q e_q 4^q``.
+
+    The channels are independent, so they are composed one at a time: applying Pauli ``g``
+    to error ``e`` gives ``e XOR g`` (phases do not matter for syndromes).
+    """
+    n = num_qubits
+    # Axis n - 1 - q holds qubit q, so the C-order flat index is sum_q e_q 4^q.
+    dist = np.zeros((4,) * n)
+    dist[(0,) * n] = 1.0
+    xor = np.arange(4)[None, :] ^ np.arange(4)[:, None]  # xor[g] maps e to e XOR g
+    for channel in channels:
+        new = np.zeros_like(dist)
+        for g, weight in enumerate(channel.probabilities):
+            if weight == 0:
+                continue
+            shifted = dist
+            for i, q in enumerate(channel.qubits):
+                shifted = np.take(shifted, xor[(g >> (2 * i)) & 3], axis=n - 1 - q)
+            new += weight * shifted
+        dist = new
+    return dist.reshape(-1)
 
 
 class ExactMLDecoder(Decoder):

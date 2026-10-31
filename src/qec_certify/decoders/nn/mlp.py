@@ -9,7 +9,9 @@ reference for how far training is from optimal.
 
 from __future__ import annotations
 
+import contextlib
 import copy
+from collections.abc import Iterator
 from dataclasses import dataclass
 
 import numpy as np
@@ -30,6 +32,12 @@ class MLPConfig:
     ``min_steps`` raises the epoch count for small training sets so that every run gets at
     least that many gradient steps; otherwise a small set is under-trained, not just
     data-limited, and the two effects cannot be told apart.
+
+    ``num_threads`` fixes PyTorch's intra-op threads during :meth:`MLPDecoder.fit` and
+    :meth:`MLPDecoder.predict_proba`. Results are bit-reproducible for a fixed value but
+    differ in the last bits between values (the summation order changes), which can flip
+    near-tied decisions; machine load does not matter. One thread is also the fastest for
+    networks this small, and does not slow down when other processes share the CPU.
     """
 
     hidden_sizes: tuple[int, ...] = (64, 64)
@@ -39,6 +47,7 @@ class MLPConfig:
     learning_rate: float = 1e-3
     weight_decay: float = 0.0
     seed: int = 0
+    num_threads: int = 1
 
 
 class MLPDecoder(Decoder):
@@ -86,7 +95,7 @@ class MLPDecoder(Decoder):
         loss_fn = nn.CrossEntropyLoss()
         self.history = []
         best_state, best_val = None, float("inf")
-        with torch.random.fork_rng(devices=[]):
+        with torch.random.fork_rng(devices=[]), _num_threads(cfg.num_threads):
             # Distinct stream from the initialisation seed, so shuffling is reproducible too.
             torch.manual_seed(cfg.seed + 1)
             optimizer = torch.optim.Adam(
@@ -121,7 +130,7 @@ class MLPDecoder(Decoder):
         """
         dets = self._check_detection_events(detection_events)
         self.model.eval()
-        with torch.no_grad():
+        with torch.no_grad(), _num_threads(self.config.num_threads):
             logits = self.model(torch.from_numpy(dets.astype(np.float32)))
             return torch.softmax(logits, dim=1).numpy().astype(np.float64)
 
@@ -144,3 +153,14 @@ class MLPDecoder(Decoder):
         self.model.eval()
         with torch.no_grad():
             return loss_fn(self.model(features), labels).item()
+
+
+@contextlib.contextmanager
+def _num_threads(n: int) -> Iterator[None]:
+    """Run with ``n`` PyTorch intra-op threads, then restore the previous setting."""
+    previous = torch.get_num_threads()
+    torch.set_num_threads(n)
+    try:
+        yield
+    finally:
+        torch.set_num_threads(previous)
