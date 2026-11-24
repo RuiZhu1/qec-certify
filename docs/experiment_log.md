@@ -1181,3 +1181,50 @@ Baseline BP+LSD: 8/200, LER 0.040, mean 1348.24 ms, p99 3912.25 ms.
  2480   20261125   26/200   0.130  87.0%     782.51            872 ms      3961 ms
  3680   20261125   20/200   0.100  90.0%     921.13           1074 ms      5809 ms
 ```
+
+### 2026-11-24: Fresh-state rerun confirms robustness and fallback conclusions, not short-retry benefit
+- Commands: `python -m qec_certify.eval.qldpc_sweep --config configs/qldpc_robustness.yaml --out runs/qldpc_robustness_fresh`,
+  `python experiments/analyze_qldpc_sweep.py runs/qldpc_robustness_fresh/sweep.json --out runs/qldpc_robustness_fresh/analysis.json`,
+  `python -m qec_certify.eval.qldpc --config configs/qldpc_fallback.yaml --out runs/qldpc_fallback_fresh`, and
+  `python -m qec_certify.eval.qldpc --config configs/qldpc_retry.yaml --out runs/qldpc_retry_fresh`
+- Config: existing robustness/fallback/retry configs, rerun with the fresh-state Relay implementation
+  after the batch state-carryover fix. Outputs are written to new `_fresh` directories and do not
+  overwrite historical stateful-batch results.
+- Commit: `ef1027e` plus no code changes during the run; each JSON records the corresponding
+  `-dirty` provenance and relay-bp 0.2.2.
+- Outputs: `runs/qldpc_robustness_fresh/`, `runs/qldpc_fallback_fresh/qldpc.json`, and
+  `runs/qldpc_retry_fresh/qldpc.json` (untracked; regenerate with the commands above).
+- Outcome: the main scientific conclusions remain stable. At p=0.001 there are no disagreements.
+  At p=0.003 Relay has 0/200 in both seeds and paired p=0.0078125/0.0009766 over BP+LSD.
+  At p=0.005 Relay has 37/200 and 50/200, versus BP+LSD 99/200 and 112/200, with paired
+  p=6.42e-14 in both cells. BP+LSD fallback corrects seven errors and introduces none, paired
+  p=0.015625, while short retry corrects only three and is not significant, p=0.25.
+- Notes:
+  - Fresh pooled high-p Relay LER is 87/400=0.2175, versus the old 66/400=0.165. The second seed
+    changed from 43 to 50 errors. The fresh outputs supersede the old pooled value.
+  - Fresh fallback has 37 calls, 30/200 errors and p99 15248 ms; no-fallback Relay has 37/200 and
+    p99 6282 ms. Accuracy improvement does not solve the tail.
+  - Fresh retry has 34/200 errors and final 34 failures, with p99 7722 ms and p=0.25. It remains
+    statistically unsupported as an accuracy strategy.
+  - All core results used for the next manuscript draft should now cite the `_fresh` outputs or
+    the fresh-state parallel run, not pre-fix batch results.
+
+Fresh robustness:
+
+```
+ p      seed       BP+LSD errors   Relay errors   McNemar p   Relay mean/shot
+ 0.001  20261124   0/200           0/200          1.0         121 ms
+ 0.001  20261125   0/200           0/200          1.0          96 ms
+ 0.003  20261124   8/200           0/200          0.0078125   257 ms
+ 0.003  20261125  11/200           0/200          0.0009766   172 ms
+ 0.005  20261124  99/200          37/200          6.42e-14    2140 ms
+ 0.005  20261125 112/200          50/200          6.42e-14    1478 ms
+```
+
+Fresh fallback and retry:
+
+```
+ method              errors   paired versus no-fallback Relay   interpretation
+ bp_lsd fallback     30/200   7 corrections, p=0.015625         significant accuracy gain, large tail
+ short Relay retry   34/200   3 corrections, p=0.25             not significant
+```
