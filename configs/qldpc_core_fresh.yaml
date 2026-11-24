@@ -1,0 +1,29 @@
+# Fresh-state core F32/I32 comparison after native batch state-carryover fix.
+name: qldpc_core_fresh
+reference_circuits: [bb144_d12_p003, bb144_d12_p0005]
+experiment_seeds: [20261124]
+shots: 200
+confidence: 0.95
+latency_shots: 10
+latency_warmup: 5
+candidates:
+  - name: f32
+    relay_bp:
+      implementation: f32
+      gamma0: 0.125
+      pre_iter: 80
+      num_sets: 60
+      set_max_iter: 60
+      gamma_dist_interval: [-0.24, 0.66]
+      stop_nconv: 1
+  - name: i32_scaled
+    relay_bp:
+      implementation: i32
+      data_scale_value: 8
+      max_data_value: 65535
+      gamma0: 0.125
+      pre_iter: 80
+      num_sets: 60
+      set_max_iter: 60
+      gamma_dist_interval: [-0.24, 0.66]
+      stop_nconv: 1

@@ -1,0 +1,28 @@
+# Fixed-window causal MWPM, W=3. d=3 is exact full-history; d=5/7 use projected boundaries.
+name: m4_streaming_window
+seed: 20261123
+code:
+  family: rotated_surface
+  distance: [3, 5, 7]
+noise:
+  model: circuit_level
+  p: 0.01
+memory_basis: Z
+rounds:
+  3: 3
+  5: 5
+  7: 7
+shots:
+  3: 1000
+  5: 500
+  7: 200
+confidence: 0.95
+decoders: [mwpm, mwpm_correlated]
+latency_shots: 20
+latency_warmup: 5
+streaming_method: sliding_window
+window_rounds: 3
+streaming_latency_shots: 20
+streaming_warmup: 2
+# Illustrative arrival rate only, not a hardware latency target.
+round_period_us: 1000

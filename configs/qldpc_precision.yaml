@@ -1,0 +1,49 @@
+# Numerical implementation comparison. All candidates use identical paper_like algorithm settings.
+name: qldpc_precision
+seed: 20261124
+reference_circuit: bb144_d12_p003
+confidence: 0.95
+validation_shots: 50
+validation_latency_shots: 10
+test_shots: 200
+test_latency_shots: 20
+latency_warmup: 5
+baseline: bp_lsd
+evaluate_all: true
+candidates:
+  - name: f32
+    relay_bp:
+      implementation: f32
+      gamma0: 0.125
+      pre_iter: 80
+      num_sets: 60
+      set_max_iter: 60
+      gamma_dist_interval: [-0.24, 0.66]
+      stop_nconv: 1
+  - name: i32_scaled
+    relay_bp:
+      implementation: i32
+      data_scale_value: 8
+      max_data_value: 65535
+      gamma0: 0.125
+      pre_iter: 80
+      num_sets: 60
+      set_max_iter: 60
+      gamma_dist_interval: [-0.24, 0.66]
+      stop_nconv: 1
+  - name: i64_scaled
+    relay_bp:
+      implementation: i64
+      data_scale_value: 8
+      max_data_value: 65535
+      gamma0: 0.125
+      pre_iter: 80
+      num_sets: 60
+      set_max_iter: 60
+      gamma_dist_interval: [-0.24, 0.66]
+      stop_nconv: 1
+bp_lsd:
+  max_iter: 100
+  lsd_order: 0
+  lsd_method: LSD_0
+  omp_thread_count: 1

@@ -5,6 +5,7 @@ from __future__ import annotations
 import stim
 
 from qec_certify.codes.base import StabilizerCode
+from qec_certify.noise.circuit_level import CircuitLevelNoise
 from qec_certify.noise.models import NoiseModel, as_noise_model
 
 
@@ -58,3 +59,34 @@ def code_capacity_circuit(
         0,
     )
     return circuit
+
+
+def circuit_level_circuit(
+    code: StabilizerCode,
+    noise: float | CircuitLevelNoise,
+    rounds: int,
+    basis: str = "Z",
+) -> stim.Circuit:
+    """Rotated-surface-code memory using Stim's standard syndrome-extraction schedule.
+
+    Base noise strength ``p`` is applied after Cliffords, before measurement, after reset
+    and to data qubits at the start of each round, with optional channel overrides. The noise
+    object can also apply seeded qubit heterogeneity and drift between rounds. The generated
+    circuit includes detectors and one logical observable. Unlike
+    :func:`code_capacity_circuit`, this circuit contains explicit ancillas and noisy multi-round
+    stabilizer extraction.
+    """
+    if code.name != "rotated_surface":
+        raise ValueError(f"circuit-level experiments require rotated_surface, got {code.name!r}")
+    if basis not in ("X", "Z"):
+        raise ValueError(f"basis must be 'X' or 'Z', got {basis!r}")
+    if not isinstance(rounds, int) or rounds < 1:
+        raise ValueError(f"rounds must be a positive integer, got {rounds!r}")
+    noise = noise if isinstance(noise, CircuitLevelNoise) else CircuitLevelNoise(float(noise))
+    circuit = stim.Circuit.generated(
+        f"surface_code:rotated_memory_{basis.lower()}",
+        distance=code.distance,
+        rounds=rounds,
+        **noise.stim_arguments(),
+    )
+    return noise.apply_to(circuit, rounds)

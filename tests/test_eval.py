@@ -5,6 +5,7 @@ from scipy.stats import binomtest
 from qec_certify.codes import code_capacity_circuit, repetition_code
 from qec_certify.decoders import Decoder
 from qec_certify.eval import (
+    benchmark_decoder,
     evaluate_decoder,
     exact_logical_error_rate,
     gap_closed,
@@ -75,6 +76,32 @@ def test_evaluate_decoder():
     data = SyndromeData(np.zeros((5, 2), bool), np.array([[0], [1], [0], [1], [1]], bool))
     result = evaluate_decoder(_AlwaysNoFlip(2), data)
     assert (result.num_errors, result.shots) == (3, 5)
+
+
+def test_benchmark_decoder_batch1_performance():
+    result = benchmark_decoder(
+        _AlwaysNoFlip(2), np.zeros((20, 2), dtype=bool), shots=5, warmup_shots=2
+    )
+    assert result.mode == "offline_batch1"
+    assert result.shots == 5
+    assert result.warmup_shots == 2
+    assert result.total_seconds > 0
+    assert result.throughput_shots_per_second > 0
+    assert 0 <= result.p50_latency_ms <= result.p95_latency_ms <= result.p99_latency_ms
+    assert result.to_dict()["mean_latency_ms"] == result.mean_latency_ms
+
+
+def test_benchmark_decoder_rejects_invalid_input():
+    decoder = _AlwaysNoFlip(2)
+    dets = np.zeros((5, 2), dtype=bool)
+    with pytest.raises(ValueError, match="latency shots"):
+        benchmark_decoder(decoder, dets, shots=0)
+    with pytest.raises(ValueError, match="latency shots"):
+        benchmark_decoder(decoder, dets, shots=6)
+    with pytest.raises(ValueError, match="warmup_shots"):
+        benchmark_decoder(decoder, dets, shots=1, warmup_shots=-1)
+    with pytest.raises(ValueError, match="2-D"):
+        benchmark_decoder(decoder, np.zeros(2), shots=1)
 
 
 def test_exact_logical_error_rate_trivial_decoder():

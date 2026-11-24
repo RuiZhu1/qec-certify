@@ -1,0 +1,57 @@
+# Pre-registered whole-shot p99 budget. Validation selects; test is run once afterwards.
+name: qldpc_realtime_tune
+seed: 20261124
+reference_circuit: bb144_d12_p003
+confidence: 0.95
+validation_shots: 50
+validation_latency_shots: 10
+max_validation_p99_ms: 100
+test_shots: 200
+test_latency_shots: 20
+latency_warmup: 5
+candidates:
+  - name: single
+    relay_bp:
+      gamma0: 0.125
+      pre_iter: 20
+      num_sets: 1
+      set_max_iter: 20
+      gamma_dist_interval: [-0.24, 0.66]
+      stop_nconv: 1
+  - name: five
+    relay_bp:
+      gamma0: 0.125
+      pre_iter: 20
+      num_sets: 5
+      set_max_iter: 20
+      gamma_dist_interval: [-0.24, 0.66]
+      stop_nconv: 1
+  - name: ten
+    relay_bp:
+      gamma0: 0.125
+      pre_iter: 40
+      num_sets: 10
+      set_max_iter: 40
+      gamma_dist_interval: [-0.24, 0.66]
+      stop_nconv: 1
+  - name: twenty
+    relay_bp:
+      gamma0: 0.125
+      pre_iter: 40
+      num_sets: 20
+      set_max_iter: 40
+      gamma_dist_interval: [-0.24, 0.66]
+      stop_nconv: 1
+  - name: paper_like
+    relay_bp:
+      gamma0: 0.125
+      pre_iter: 80
+      num_sets: 60
+      set_max_iter: 60
+      gamma_dist_interval: [-0.24, 0.66]
+      stop_nconv: 1
+bp_lsd:
+  max_iter: 100
+  lsd_order: 0
+  lsd_method: LSD_0
+  omp_thread_count: 1

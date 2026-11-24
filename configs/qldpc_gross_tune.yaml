@@ -1,0 +1,40 @@
+# Pre-registered Relay-BP candidates. Selection uses validation only; test is run once afterwards.
+name: qldpc_gross_tune
+seed: 20261123
+reference_circuit: bb144_d12_p003
+confidence: 0.95
+validation_shots: 50
+validation_latency_shots: 5
+test_shots: 300
+test_latency_shots: 20
+latency_warmup: 5
+candidates:
+  - name: paper_like
+    relay_bp:
+      gamma0: 0.125
+      pre_iter: 80
+      num_sets: 60
+      set_max_iter: 60
+      gamma_dist_interval: [-0.24, 0.66]
+      stop_nconv: 1
+  - name: fast
+    relay_bp:
+      gamma0: 0.125
+      pre_iter: 40
+      num_sets: 20
+      set_max_iter: 40
+      gamma_dist_interval: [-0.24, 0.66]
+      stop_nconv: 1
+  - name: wide
+    relay_bp:
+      gamma0: 0.125
+      pre_iter: 80
+      num_sets: 60
+      set_max_iter: 60
+      gamma_dist_interval: [-0.4, 0.8]
+      stop_nconv: 1
+# Practical smoke baseline, not the paper's high-effort BP+OSD-CS-10 configuration.
+bp_osd:
+  max_iter: 100
+  osd_order: 0
+  omp_thread_count: 1

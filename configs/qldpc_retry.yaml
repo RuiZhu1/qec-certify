@@ -1,0 +1,27 @@
+# Cheaper failure handling: retry unsuccessful F32 Relay shots with a shorter independent Relay run.
+name: qldpc_retry
+seed: 20261124
+reference_circuit: bb144_d12_p0005
+shots: 200
+confidence: 0.95
+decoders: [relay_bp, relay_bp_fallback]
+fallback_decoder: relay_bp
+fallback_seed_offset: 1
+relay_bp:
+  implementation: f32
+  gamma0: 0.125
+  pre_iter: 80
+  num_sets: 60
+  set_max_iter: 60
+  gamma_dist_interval: [-0.24, 0.66]
+  stop_nconv: 1
+fallback_relay_bp:
+  implementation: f32
+  gamma0: 0.125
+  pre_iter: 40
+  num_sets: 20
+  set_max_iter: 40
+  gamma_dist_interval: [-0.24, 0.66]
+  stop_nconv: 1
+latency_shots: 10
+latency_warmup: 5

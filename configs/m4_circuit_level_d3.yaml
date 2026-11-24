@@ -1,0 +1,17 @@
+# M4 first increment: Stim circuit-level d=3 rotated surface-code memory.
+# Uniform p is applied to Clifford, idle, measurement and reset noise channels.
+name: m4_circuit_level_d3
+seed: 20261123
+code:
+  family: rotated_surface
+  distance: 3
+noise:
+  model: circuit_level
+  p: [0.005, 0.01, 0.02]
+memory_basis: Z
+rounds: 3
+shots: 1000
+confidence: 0.95
+decoders: [mwpm, mwpm_correlated, bp_osd, union_find]
+latency_shots: 20
+latency_warmup: 5

@@ -5,6 +5,7 @@ import pytest
 
 from qec_certify.codes import (
     Stabilizer,
+    circuit_level_circuit,
     code_capacity_circuit,
     make_code,
     repetition_code,
@@ -111,6 +112,37 @@ def test_noiseless_circuit_never_fires(basis):
     data = sample_syndromes(code_capacity_circuit(rotated_surface_code(3), 0.0, basis), 200, 1)
     assert not data.detection_events.any()
     assert not data.observable_flips.any()
+
+
+@pytest.mark.parametrize("basis", ["X", "Z"])
+def test_circuit_level_noiseless_memory(basis):
+    circuit = circuit_level_circuit(rotated_surface_code(3), 0.0, rounds=3, basis=basis)
+    assert circuit.num_detectors == 3 * (3**2 - 1)
+    assert circuit.num_observables == 1
+    circuit.detector_error_model()
+    data = sample_syndromes(circuit, 200, 1)
+    assert not data.detection_events.any()
+    assert not data.observable_flips.any()
+
+
+@pytest.mark.parametrize("distance", [3, 5, 7])
+def test_circuit_level_noise_channels_and_distance(distance):
+    circuit = circuit_level_circuit(rotated_surface_code(distance), 0.01, rounds=distance)
+    assert circuit.num_detectors == distance * (distance**2 - 1)
+    instructions = {inst.name for inst in circuit.flattened()}
+    assert {"DEPOLARIZE1", "DEPOLARIZE2", "X_ERROR"} <= instructions
+    assert len(circuit.shortest_graphlike_error()) == distance
+
+
+def test_circuit_level_rejects_invalid_arguments():
+    with pytest.raises(ValueError, match="rotated_surface"):
+        circuit_level_circuit(repetition_code(3), 0.01, rounds=3)
+    with pytest.raises(ValueError, match="rounds"):
+        circuit_level_circuit(rotated_surface_code(3), 0.01, rounds=0)
+    with pytest.raises(ValueError, match="basis"):
+        circuit_level_circuit(rotated_surface_code(3), 0.01, rounds=3, basis="Y")
+    with pytest.raises(ValueError, match="probability"):
+        circuit_level_circuit(rotated_surface_code(3), 1.01, rounds=3)
 
 
 def test_make_code():
