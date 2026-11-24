@@ -1,0 +1,49 @@
+# Controlled early-fallback comparison: 10/20/60 Relay ensembles before BP+LSD takeover.
+name: qldpc_early_fallback
+seed: 20261124
+reference_circuit: bb144_d12_p0005
+confidence: 0.95
+validation_shots: 20
+validation_latency_shots: 5
+test_shots: 100
+test_latency_shots: 10
+latency_warmup: 5
+baseline: bp_lsd
+evaluate_all: true
+fallback_decoder: bp_lsd
+candidates:
+  - name: ten_fallback
+    decoder: relay_bp_fallback
+    relay_bp:
+      implementation: f32
+      gamma0: 0.125
+      pre_iter: 40
+      num_sets: 10
+      set_max_iter: 40
+      gamma_dist_interval: [-0.24, 0.66]
+      stop_nconv: 1
+  - name: twenty_fallback
+    decoder: relay_bp_fallback
+    relay_bp:
+      implementation: f32
+      gamma0: 0.125
+      pre_iter: 40
+      num_sets: 20
+      set_max_iter: 40
+      gamma_dist_interval: [-0.24, 0.66]
+      stop_nconv: 1
+  - name: paper_fallback
+    decoder: relay_bp_fallback
+    relay_bp:
+      implementation: f32
+      gamma0: 0.125
+      pre_iter: 80
+      num_sets: 60
+      set_max_iter: 60
+      gamma_dist_interval: [-0.24, 0.66]
+      stop_nconv: 1
+bp_lsd:
+  max_iter: 100
+  lsd_order: 0
+  lsd_method: LSD_0
+  omp_thread_count: 1

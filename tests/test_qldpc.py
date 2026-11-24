@@ -7,6 +7,7 @@ import stim
 
 from qec_certify.codes import load_reference_circuit
 from qec_certify.decoders import BPLSDDecoder, FailureFallbackDecoder, RelayBPDecoder
+from qec_certify.eval.profiling import profile_relay_decoder
 from qec_certify.eval.qldpc import main, run_qldpc_experiment
 from qec_certify.eval.qldpc_pareto import _pareto_front, run_qldpc_pareto
 from qec_certify.eval.qldpc_precision_sweep import run_qldpc_precision_sweep
@@ -353,6 +354,7 @@ def test_pareto_runner_shares_test_seed_and_evaluates_front():
             validation_latency_shots=2,
             test_shots=10,
             test_latency_shots=0,
+            profile_shots=2,
         )
     )
     assert report["test"]["baseline"] == "bp_osd"
@@ -365,6 +367,7 @@ def test_pareto_runner_shares_test_seed_and_evaluates_front():
     assert all(
         "mcnemar_pvalue" in row["paired_with_baseline"] for row in report["test"]["candidates"]
     )
+    assert all(row["profile"]["shots"] == 2 for row in report["test"]["candidates"])
 
 
 def test_relay_rejects_unknown_implementation():
@@ -425,6 +428,7 @@ def test_precision_sweep_shares_shots_and_reports_pairwise_decisions():
             "shots": 5,
             "candidates": candidates,
             "latency_shots": 0,
+            "profile_shots": 2,
         },
         on_cell=saved.append,
         skip={("bb18_d3_p003", 31)},
@@ -436,6 +440,7 @@ def test_precision_sweep_shares_shots_and_reports_pairwise_decisions():
         assert "f32__vs__i32_scaled" in cell["pairwise_comparisons"]
         assert all(0 <= row["decode_success_rate"] <= 1 for row in cell["decoders"].values())
         assert all(row["evaluation_seconds"] > 0 for row in cell["decoders"].values())
+        assert all(row["profile"]["shots"] == 2 for row in cell["decoders"].values())
 
 
 def test_failure_fallback_recovers_failed_relay_shot():
@@ -525,3 +530,70 @@ def test_relay_parallel_batch_matches_serial_exactly():
         serial.predict(data.detection_events),
         serial.predict(data.detection_events[::-1])[::-1],
     )
+
+
+def test_relay_profile_breakdown_serial_and_parallel():
+    circuit, _ = load_reference_circuit("bb18_d3_p003")
+    data = sample_syndromes(circuit, 10, 43)
+    options = {
+        "pre_iter": 10,
+        "num_sets": 5,
+        "set_max_iter": 10,
+        "gamma_dist_interval": (-0.24, 0.66),
+        "seed": 43,
+    }
+    serial = RelayBPDecoder.from_circuit(circuit, **options, parallel=False)
+    profile = profile_relay_decoder(serial, data.detection_events, shots=5, warmup_shots=1)
+    assert profile["successes"] + profile["failures"] == 5
+    assert profile["iterations"]["mean"] > 0
+    assert profile["initialization_ms"]["mean"] > 0
+    assert profile["native_decode_ms"]["mean"] > 0
+    assert profile["python_overhead_ms"]["mean"] >= 0
+    assert profile["throughput_shots_per_second"] > 0
+
+    parallel = RelayBPDecoder.from_circuit(circuit, **options, parallel=True)
+    parallel_profile = profile_relay_decoder(
+        parallel, data.detection_events, shots=2, warmup_shots=0
+    )
+    assert parallel_profile["mode"] == "parallel"
+    assert parallel_profile["initialization_ms"] is None
+    assert parallel_profile["native_decode_ms"]["mean"] > 0
+
+
+def test_pareto_supports_fallback_candidates():
+    config = tuning_config(
+        baseline="bp_lsd",
+        bp_lsd={"max_iter": 5, "lsd_order": 0},
+        fallback_decoder="bp_lsd",
+        evaluate_all=True,
+        validation_shots=5,
+        validation_latency_shots=2,
+        test_shots=5,
+        test_latency_shots=0,
+    )
+    for candidate in config["candidates"]:
+        candidate["decoder"] = "relay_bp_fallback"
+    report = run_qldpc_pareto(config)
+    assert set(report["evaluated_candidates"]) == {"long", "short"}
+    for row in report["test"]["candidates"]:
+        assert "fallback_calls" in row
+        assert "final_decode_success_rate" in row
+
+
+def test_relay_alpha_options_and_validation():
+    dem = stim.DetectorErrorModel("error(0.1) D0 D1 L0")
+    for alpha in (None, 0.95, 0.0):
+        decoder = RelayBPDecoder(
+            dem,
+            pre_iter=5,
+            num_sets=2,
+            set_max_iter=5,
+            alpha=alpha,
+            alpha_iteration_scaling_factor=10,
+        )
+        assert decoder.predict(np.array([[0, 0], [1, 1]], dtype=bool)).tolist() == [
+            [False],
+            [True],
+        ]
+    with pytest.raises(ValueError, match="alpha_iteration_scaling_factor"):
+        RelayBPDecoder(dem, alpha=0, alpha_iteration_scaling_factor=0)

@@ -17,7 +17,9 @@ import numpy as np
 from scipy.stats import binomtest
 
 from qec_certify.codes import load_reference_circuit
+from qec_certify.decoders import RelayBPDecoder
 from qec_certify.eval.metrics import benchmark_decoder, logical_error_rate
+from qec_certify.eval.profiling import profile_relay_decoder
 from qec_certify.eval.qldpc import _make_decoder, decoder_diagnostics
 from qec_certify.eval.qldpc_tune import _validation_row
 from qec_certify.sim import sample_syndromes
@@ -92,7 +94,9 @@ def run_qldpc_pareto(config: dict[str, Any]) -> dict[str, Any]:
         if candidate["name"] not in evaluated_names:
             continue
         decoder = _make_decoder(
-            "relay_bp", circuit, {"seed": config["seed"], "relay_bp": candidate["relay_bp"]}
+            candidate.get("decoder", "relay_bp"),
+            circuit,
+            {**config, "seed": config["seed"], "relay_bp": candidate["relay_bp"]},
         )
         predicted = decoder.predict(test_data.detection_events)
         row: dict[str, Any] = {
@@ -116,6 +120,13 @@ def run_qldpc_pareto(config: dict[str, Any]) -> dict[str, Any]:
                 shots=int(config["test_latency_shots"]),
                 warmup_shots=int(config.get("latency_warmup", 1)),
             ).to_dict()
+        if config.get("profile_shots", 0) and isinstance(decoder, RelayBPDecoder):
+            row["profile"] = profile_relay_decoder(
+                decoder,
+                test_data.detection_events,
+                shots=int(config["profile_shots"]),
+                warmup_shots=int(config.get("profile_warmup", 1)),
+            )
         candidate_rows.append(row)
     return {
         "config": config,

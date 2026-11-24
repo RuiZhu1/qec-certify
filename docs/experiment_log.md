@@ -1020,3 +1020,164 @@ Baseline BP+LSD: 8/200, LER 0.040, mean 1348.24 ms, p99 3912.25 ms.
  F32/I32 p=.003  0/200 each, zero disagreements  0/200 each, zero disagreements exact at low p
  F32/I32 p=.005  37/200 vs 28/200               37/200 vs 30/200, p=0.1671     not equivalent; not significant
 ```
+
+### 2026-11-24: Relay profiling identifies native BP work and nonconvergence as the bottleneck
+- Command: `python -m qec_certify.eval.qldpc_precision_sweep --config configs/qldpc_profile.yaml --out runs/qldpc_profile`
+- Config: `configs/qldpc_profile.yaml`, fixed before running. Gross [[144,12,12]] at
+  p=0.003/0.005, seed 20261124, 100 evaluation shots and 20 profiled batch-of-one shots per
+  decoder. Serial uses a fresh native decoder per shot; parallel uses independent runner clones.
+  Both use identical F32 `paper_like` parameters.
+- Commit: code as uncommitted changes on `2381ff5` after the baseline commit; the JSON records
+  the corresponding dirty provenance.
+- Outputs: `runs/qldpc_profile/cells.jsonl` and `precision_sweep.json` (untracked; regenerate
+  with the command above).
+- Outcome: native message passing dominates latency. At p=0.005 all three failed profiled shots
+  use exactly 3680 iterations and have mean latency 6628 ms serial/6574 ms parallel. Successful
+  shots also have a large tail, with up to 3608 iterations. Python overhead is below 0.5 ms and
+  serial initialization is about 37 ms, so neither is the main bottleneck.
+- Notes:
+  - At p=0.003 serial mean latency is 247.86 ms, comprising about 36.80 ms initialization,
+    210.71 ms native decode and 0.34 ms remaining overhead. The iteration p99/max is 554/603.
+  - At p=0.005 serial mean latency is 2460.96 ms, with 2423.97 ms native decode, 36.63 ms
+    initialization and 0.36 ms remaining overhead. Iteration p99/max is 3680/3680.
+  - Parallel batch-of-one latency is essentially unchanged, as expected. Whole-batch evaluation
+    is faster: 22.15 s versus 31.43 s at p=0.003 and 200.83 s versus 260.69 s at p=0.005.
+    This is again throughput, not lower tail latency.
+  - Optimization should target native iteration cost, nonconvergence and successful-shot tails.
+    Python-only optimization or removing fresh initialization cannot meet the latency problem.
+
+```
+ p      mode      iterations p99/max   failure iterations   mean latency   init mean   native mean   Python mean
+ 0.003  serial    554/603             --                 247.86 ms      36.80 ms    210.71 ms     0.34 ms
+ 0.003  parallel  554/603             --                 210.60 ms      --          210.55 ms     0.05 ms
+ 0.005  serial    3680/3680           3680 (all failures) 2460.96 ms     36.63 ms   2423.97 ms    0.36 ms
+ 0.005  parallel  3680/3680           3680 (all failures) 2425.60 ms     --         2425.53 ms    0.07 ms
+```
+
+### 2026-11-24: Early BP+LSD takeover removes final failures but not the latency tail
+- Command: `python -m qec_certify.eval.qldpc_pareto --config configs/qldpc_early_fallback.yaml --out runs/qldpc_early_fallback`
+- Config: `configs/qldpc_early_fallback.yaml`, fixed before running. Gross [[144,12,12]] at
+  p=0.005, seed 20261124, 20 validation shots and 100 shared test shots. Compare 10/20/60
+  Relay ensembles followed by BP+LSD-0 only on unsuccessful Relay shots, against one BP+LSD-0
+  baseline evaluation. Ten latency shots per decoder.
+- Commit: code as uncommitted changes on `2381ff5`; the JSON records the corresponding dirty
+  provenance and relay-bp 0.2.2.
+- Outputs: `runs/qldpc_early_fallback/pareto.json` (untracked; regenerate with the command above).
+- Outcome: all hybrids have zero final decode failures and significantly fewer errors than the
+  BP+LSD baseline. More Relay work improves hybrid accuracy, but increases the tail. Ten/fallback
+  has the lowest p99 among hybrids, yet 58% of shots need BP+LSD and its p99 is approximately
+  the same as the baseline. The early-takeover hypothesis does not solve the latency problem.
+- Notes:
+  - BP+LSD baseline has 53/100 errors, mean/p99 4178/6486 ms. The hybrids have 35/100, 27/100
+    and 12/100 errors, with 58%, 46% and 19% primary failure rates respectively.
+  - Hybrid mean/p99 latencies are 2513/6476 ms, 2490/7475 ms and 3067/11873 ms. Accuracy and
+    latency remain strongly coupled; no production sweet spot is established.
+  - All baseline-wrong/hybrid-correct transitions favor the hybrids, with McNemar p values
+    7.63e-06, 2.98e-08 and 9.09e-13. These accuracy gains do not imply real-time suitability.
+  - Further work should target native iteration cost or a fundamentally better nonconvergence
+    strategy, not continue multiplying Relay-plus-BP fallback budgets.
+
+```
+ candidate         errors   LER    primary failure rate   final failures   mean/shot   p99/shot   McNemar vs BP
+ ten_fallback      35/100   0.35   58%                    0               2513 ms     6476 ms    7.63e-06
+ twenty_fallback   27/100   0.27   46%                    0               2490 ms     7475 ms    2.98e-08
+ paper_fallback    12/100   0.12   19%                    0               3067 ms    11873 ms   9.09e-13
+```
+
+### 2026-11-24: Alpha=0.90 improves average convergence but not the failure-driven tail
+- Command: `python -m qec_certify.eval.qldpc_pareto --config configs/qldpc_alpha.yaml --out runs/qldpc_alpha`
+- Config: `configs/qldpc_alpha.yaml`, fixed before running. Gross [[144,12,12]] at p=0.005,
+  seed 20261124, 50 validation shots and 200 shared test shots. Compare alpha=None, 0.95, 0.90
+  and an iteration ramp (alpha=0, scaling factor 10), all with otherwise identical F32
+  `paper_like` settings. `evaluate_all` includes every candidate on test. BP+LSD-0 is the shared
+  baseline; 20 latency/profile shots per candidate.
+- Commit: code as uncommitted changes on `2381ff5`; the JSON records the corresponding dirty
+  provenance and relay-bp 0.2.2.
+- Outputs: `runs/qldpc_alpha/pareto.json` (untracked; regenerate with the command above).
+- Outcome: alpha=0.90 gives the best accuracy and average convergence in this cell: 18/200 errors,
+  91% success and 806.275 mean iterations, compared with alpha=None's 37/200, 81.5% and 1238.86.
+  Mean latency falls from 1641.93 ms to 1046.35 ms. However, p99 remains about 6.3 s because
+  failed decodes still exhaust the 3680-iteration budget.
+- Notes:
+  - Alpha=0.95 gives 21/200 errors and 89.5% success; ramp gives 26/200 and 87%. Alpha=0.90 is
+    the most promising candidate in this cell, but requires cross-p/seed validation.
+  - All candidates significantly outperform the shared BP+LSD-0 baseline in accuracy, with paired
+    p values from 6.42e-14 to 1.42e-21. This does not imply real-time capability.
+  - Failure-shot mean latency remains 6.21--6.28 s across candidates. Alpha improves average
+    behavior, not the failure-driven tail; a separate tail strategy or faster native iteration
+    implementation is still required.
+
+```
+ candidate    errors   success   mean iterations   mean/shot   p99/shot   failure mean
+ alpha_none   37/200   81.5%     1238.86           1642 ms     6254 ms    6209 ms
+ alpha_0_95   21/200   89.5%      863.21           1397 ms     6362 ms    6250 ms
+ alpha_0_90   18/200   91.0%      806.28           1046 ms     6265 ms    6231 ms
+ alpha_ramp   26/200   87.0%      924.81           1336 ms     6352 ms    6275 ms
+```
+
+### 2026-11-24: Alpha=0.90 accuracy and average-convergence gains replicate across seeds
+- Command: `python -m qec_certify.eval.qldpc_precision_sweep --config configs/qldpc_alpha_robustness.yaml --out runs/qldpc_alpha_robustness`
+- Config: `configs/qldpc_alpha_robustness.yaml`, fixed before running. Gross [[144,12,12]]
+  at p=0.001/0.003/0.005, seeds 20261124/20261125, 200 shared shots per cell. Compare
+  alpha=None and alpha=0.90 with otherwise identical F32 `paper_like` settings. Ten latency
+  shots and 20 profile shots per decoder.
+- Commit: code as uncommitted changes on `2381ff5`; the JSON records the corresponding dirty
+  provenance and relay-bp 0.2.2.
+- Outputs: `runs/qldpc_alpha_robustness/cells.jsonl` and `precision_sweep.json` (untracked;
+  regenerate with the command above).
+- Outcome: at p=0.001/0.003 both variants have zero errors and zero prediction disagreements.
+  At p=0.005, alpha=0.90 improves errors from 37 to 18 and from 50 to 20 across the two seeds.
+  Success rates improve from 81.5%/75.5% to 91.0%/90.0%. McNemar p values are 2.10e-05 and
+  2.27e-07, so the accuracy advantage replicates across independent seeds.
+- Notes:
+  - High-p mean iterations fall from 1238.86 to 806.28 and from 1424.14 to 921.13. Mean latency
+    also decreases. This supports a stable average-convergence benefit, not only a single-cell effect.
+  - Failure-driven tail remains: all failure shots still use 3680 iterations, and p99 remains
+    about 5.75--6.30 s. Low-p tail measurements also vary between seeds, so no general speedup
+    percentage is claimed.
+  - Alpha=0.90 is a stronger default candidate for subsequent work, but it does not solve
+    real-time latency and still needs hardware-data validation.
+
+```
+ p      seed       alpha=None errors/success   alpha=0.90 errors/success   McNemar p   mean iterations none -> 0.90
+ 0.001  20261124   0/200, 100%                0/200, 100%                 1.0         38.61 -> 35.91
+ 0.001  20261125   0/200, 100%                0/200, 100%                 1.0         35.86 -> 34.58
+ 0.003  20261124   0/200, 100%                0/200, 100%                 1.0        147.05 -> 117.38
+ 0.003  20261125   0/200, 100%                0/200, 100%                 1.0        135.65 -> 132.54
+ 0.005  20261124  37/200, 81.5%              18/200, 91.0%                2.10e-05   1238.86 -> 806.28
+ 0.005  20261125  50/200, 75.5%              20/200, 90.0%                2.27e-07   1424.14 -> 921.13
+```
+
+### 2026-11-24: Iteration caps trade away accuracy for tail latency at every tested budget
+- Command: `python -m qec_certify.eval.qldpc_precision_sweep --config configs/qldpc_tail_budget.yaml --out runs/qldpc_tail_budget`
+- Config: `configs/qldpc_tail_budget.yaml`, fixed before running. Gross [[144,12,12]] at
+  p=0.005, seeds 20261124/20261125, 200 shared shots per cell. All candidates use F32,
+  alpha=0.90 and otherwise identical `paper_like` settings. Only the total iteration cap changes:
+  680/1280/2480/3680. Ten latency shots and 20 profile shots per decoder.
+- Commit: code as uncommitted changes on `2381ff5`; the JSON records the corresponding dirty
+  provenance and relay-bp 0.2.2.
+- Outputs: `runs/qldpc_tail_budget/cells.jsonl` and `precision_sweep.json` (untracked;
+  regenerate with the command above).
+- Outcome: lower caps reduce p99 approximately in line with the iteration budget, but every
+  capped configuration has significantly more errors than the full 3680 budget on both seeds.
+  There is no free tail truncation in the current implementation.
+- Notes:
+  - Against cap=3680, all cap=680/1280/2480 comparisons have zero `capped_correct_full_wrong`
+    transitions and 36/23/7 or 56/23/6 reverse transitions. McNemar p values are
+    2.91e-11/2.38e-07/0.015625 and 2.78e-17/2.38e-07/0.03125 respectively.
+  - Cap=680 reaches p99 about 1.16--1.19 s, but LER is 0.27/0.38 and success only 73%/62%.
+    Cap=2480 still has significantly worse accuracy than the full budget despite p99 about 4 s.
+  - Stop this parameter-only tail-truncation route. Further progress needs faster native
+    iterations, a better nonconvergence mechanism, or a fundamentally different decoder.
+
+```
+ cap    seed       errors   LER    success   mean iterations   mean/shot   p99/shot
+ 680    20261124   54/200   0.27   73.0%     350.84            601 ms      1192 ms
+ 1280   20261124   41/200   0.205  79.5%     490.47            922 ms      2214 ms
+ 2480   20261124   25/200   0.125  87.5%     681.97           1317 ms      4230 ms
+ 3680   20261124   18/200   0.090  91.0%     806.28           1729 ms      6266 ms
+ 680    20261125   76/200   0.380  62.0%     410.43            562 ms      1158 ms
+ 1280   20261125   43/200   0.215  78.5%     590.84            674 ms      2124 ms
+ 2480   20261125   26/200   0.130  87.0%     782.51            872 ms      3961 ms
+ 3680   20261125   20/200   0.100  90.0%     921.13           1074 ms      5809 ms
+```

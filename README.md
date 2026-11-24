@@ -186,10 +186,15 @@ python -m qec_certify.eval.qldpc_tune --config configs/qldpc_gross_tune.yaml --o
 python -m qec_certify.eval.qldpc_tune --config configs/qldpc_realtime_tune.yaml --out runs/qldpc_realtime_tune
 python -m qec_certify.eval.qldpc_pareto --config configs/qldpc_pareto.yaml --out runs/qldpc_pareto
 python -m qec_certify.eval.qldpc_pareto --config configs/qldpc_precision.yaml --out runs/qldpc_precision
+python -m qec_certify.eval.qldpc_pareto --config configs/qldpc_early_fallback.yaml --out runs/qldpc_early_fallback
+python -m qec_certify.eval.qldpc_pareto --config configs/qldpc_alpha.yaml --out runs/qldpc_alpha
+python -m qec_certify.eval.qldpc_precision_sweep --config configs/qldpc_alpha_robustness.yaml --out runs/qldpc_alpha_robustness
+python -m qec_certify.eval.qldpc_precision_sweep --config configs/qldpc_tail_budget.yaml --out runs/qldpc_tail_budget
 python experiments/analyze_qldpc_precision.py runs/qldpc_precision/pareto.json --out runs/qldpc_precision/implementation_pairs.json
 python -m qec_certify.eval.qldpc_precision_sweep --config configs/qldpc_precision_robustness.yaml --out runs/qldpc_precision_robustness
 python -m qec_certify.eval.qldpc_precision_sweep --config configs/qldpc_parallel.yaml --out runs/qldpc_parallel
 python -m qec_certify.eval.qldpc_precision_sweep --config configs/qldpc_core_fresh.yaml --out runs/qldpc_core_fresh
+python -m qec_certify.eval.qldpc_precision_sweep --config configs/qldpc_profile.yaml --out runs/qldpc_profile
 python -m qec_certify.eval.qldpc_sweep --config configs/qldpc_robustness.yaml --out runs/qldpc_robustness
 python experiments/analyze_qldpc_sweep.py runs/qldpc_robustness/sweep.json --out runs/qldpc_robustness/analysis.json
 python -m qec_certify.eval.qldpc --config configs/qldpc_fallback.yaml --out runs/qldpc_fallback
@@ -241,7 +246,9 @@ selected with `latency_budget.met: false` rather than being presented as meeting
 `eval.qldpc_pareto` instead evaluates every validation-nondominated accuracy/latency candidate
 on the same held-out shots with a single baseline evaluation, preserving the full tradeoff.
 With `evaluate_all: true`, even dominated candidates are tested for numerical-implementation
-comparisons. Relay-BP supports `implementation: f32/i32/i64`; unsuccessful native decodes fall
+comparisons. Pareto candidates may set `decoder: relay_bp_fallback` to evaluate early BP+LSD
+takeover at different Relay budgets with shared shots. Relay-BP supports `implementation: f32/i32/i64`
+and optional `alpha`/`alpha_iteration_scaling_factor` convergence controls; unsuccessful native decodes fall
 back to no-flip and are reported through `decode_failures`, `decode_success_rate` and iteration
 statistics rather than being returned as valid corrections. `eval.qldpc_precision_sweep`
 compares those implementations across noise strengths and independent seeds on shared shots,
@@ -249,6 +256,9 @@ with per-cell checkpoints and per-implementation decode diagnostics. Serial Rela
 a fresh native decoder per shot to prevent state carryover; `parallel: true` uses independent
 clones through `ObservableDecoderRunner`. Batch `evaluation_seconds` and batch-of-one latency are
 reported separately, since parallel throughput does not imply lower single-shot latency.
+`profile_shots` adds iteration percentiles, success/failure-specific latency and serial
+initialization/native-decode/Python-overhead breakdown; parallel clone setup is reported as
+unavailable rather than guessed.
 `relay_bp_fallback` invokes
 BP+LSD only for unsuccessful Relay shots and reports `fallback_calls`, `fallback_rate` and the
 resulting end-to-end latency. With `fallback_decoder: relay_bp`, a shorter independent-seed Relay

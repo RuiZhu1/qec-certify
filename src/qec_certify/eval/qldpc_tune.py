@@ -39,7 +39,11 @@ def _validation_row(
     config: dict[str, Any],
 ) -> dict[str, Any]:
     options = candidate["relay_bp"]
-    decoder = _make_decoder("relay_bp", circuit, {"seed": config["seed"], "relay_bp": options})
+    decoder = _make_decoder(
+        candidate.get("decoder", "relay_bp"),
+        circuit,
+        {**config, "seed": config["seed"], "relay_bp": options},
+    )
     predicted = decoder.predict(data.detection_events)
     row: dict[str, Any] = {
         "candidate": candidate["name"],

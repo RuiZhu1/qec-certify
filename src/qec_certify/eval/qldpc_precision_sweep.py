@@ -17,6 +17,7 @@ from typing import Any
 
 from qec_certify.codes import load_reference_circuit
 from qec_certify.eval.metrics import benchmark_decoder, logical_error_rate
+from qec_certify.eval.profiling import profile_relay_decoder
 from qec_certify.eval.qldpc import _make_decoder, _pairwise_comparisons, decoder_diagnostics
 from qec_certify.sim import sample_syndromes
 from qec_certify.utils import git_commit_hash, load_config, split_seeds
@@ -62,6 +63,13 @@ def run_qldpc_precision_sweep(
                         shots=int(config["latency_shots"]),
                         warmup_shots=int(config.get("latency_warmup", 1)),
                     ).to_dict()
+                if config.get("profile_shots", 0):
+                    row["profile"] = profile_relay_decoder(
+                        decoder,
+                        data.detection_events,
+                        shots=int(config["profile_shots"]),
+                        warmup_shots=int(config.get("profile_warmup", 1)),
+                    )
                 rows[name] = row
             cell = {
                 "reference": reference,

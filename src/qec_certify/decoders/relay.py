@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import time
+
 import numpy as np
 import stim
 from relay_bp import ObservableDecoderRunner, RelayDecoderF32, RelayDecoderI32, RelayDecoderI64
@@ -33,6 +35,8 @@ class RelayBPDecoder(DEMDecoder):
         data_scale_value: float | None = None,
         max_data_value: float | None = None,
         parallel: bool = False,
+        alpha: float | None = None,
+        alpha_iteration_scaling_factor: float = 1.0,
     ) -> None:
         super().__init__(dem)
         decoder_class = {
@@ -45,9 +49,12 @@ class RelayBPDecoder(DEMDecoder):
                 f"unknown Relay-BP implementation {implementation!r}; "
                 "choose from ['f32', 'i32', 'i64']"
             )
+        if alpha_iteration_scaling_factor <= 0:
+            raise ValueError("alpha_iteration_scaling_factor must be positive")
         self.implementation = implementation
         self.parallel = parallel
         options = {
+            "alpha_iteration_scaling_factor": alpha_iteration_scaling_factor,
             "gamma0": gamma0,
             "pre_iter": pre_iter,
             "num_sets": num_sets,
@@ -56,6 +63,8 @@ class RelayBPDecoder(DEMDecoder):
             "stop_nconv": stop_nconv,
             "seed": seed,
         }
+        if alpha is not None:
+            options["alpha"] = alpha
         if data_scale_value is not None:
             options["data_scale_value"] = data_scale_value
         if max_data_value is not None:
@@ -79,22 +88,35 @@ class RelayBPDecoder(DEMDecoder):
         return self.decoder.decode(syndrome)
 
     def predict(self, detection_events: np.ndarray) -> np.ndarray:
+        predict_start = time.perf_counter()
         dets = self._check_detection_events(detection_events)
         self.last_decode_success = np.ones(len(dets), dtype=bool)
         self.last_decode_iterations = np.zeros(len(dets), dtype=np.int64)
+        self.last_initialization_seconds = np.zeros(len(dets))
+        self.last_native_decode_seconds = np.zeros(len(dets))
         if not self.num_mechanisms:
+            self.last_predict_seconds = np.zeros(len(dets))
             return np.tile(self._constant_observables, (len(dets), 1))
         syndromes = dets.astype(np.uint8) ^ self._constant_syndrome
         if self.parallel:
+            decode_start = time.perf_counter()
             results = self.runner.decode_observables_detailed_batch(
                 syndromes, parallel=True, progress_bar=False
             )
+            self.last_native_decode_seconds.fill(time.perf_counter() - decode_start)
             logical = np.asarray([result.observables for result in results], dtype=np.uint8)
             self.last_decode_success = np.asarray(
                 [result.converged for result in results], dtype=bool
             )
         else:
-            results = [self._decoder_factory().decode_detailed(syndrome) for syndrome in syndromes]
+            results = []
+            for k, syndrome in enumerate(syndromes):
+                init_start = time.perf_counter()
+                native = self._decoder_factory()
+                self.last_initialization_seconds[k] = time.perf_counter() - init_start
+                decode_start = time.perf_counter()
+                results.append(native.decode_detailed(syndrome))
+                self.last_native_decode_seconds[k] = time.perf_counter() - decode_start
             mechanisms = np.asarray([result.decoding for result in results], dtype=np.uint8)
             self.last_decode_success = np.asarray(
                 [result.success for result in results], dtype=bool
@@ -105,4 +127,5 @@ class RelayBPDecoder(DEMDecoder):
         )
         logical = logical.astype(bool) ^ self._constant_observables
         logical[~self.last_decode_success] = self._constant_observables
+        self.last_predict_seconds = np.full(len(dets), time.perf_counter() - predict_start)
         return logical
