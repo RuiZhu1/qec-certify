@@ -1,0 +1,51 @@
+# Tail-budget sweep with fixed alpha=0.90: total caps are 680/1280/2480/3680 iterations.
+name: qldpc_tail_budget
+reference_circuits: [bb144_d12_p0005]
+experiment_seeds: [20261124, 20261125]
+shots: 200
+confidence: 0.95
+latency_shots: 10
+latency_warmup: 5
+profile_shots: 20
+profile_warmup: 2
+candidates:
+  - name: cap_0680
+    relay_bp:
+      implementation: f32
+      alpha: 0.90
+      gamma0: 0.125
+      pre_iter: 80
+      num_sets: 10
+      set_max_iter: 60
+      gamma_dist_interval: [-0.24, 0.66]
+      stop_nconv: 1
+  - name: cap_1280
+    relay_bp:
+      implementation: f32
+      alpha: 0.90
+      gamma0: 0.125
+      pre_iter: 80
+      num_sets: 20
+      set_max_iter: 60
+      gamma_dist_interval: [-0.24, 0.66]
+      stop_nconv: 1
+  - name: cap_2480
+    relay_bp:
+      implementation: f32
+      alpha: 0.90
+      gamma0: 0.125
+      pre_iter: 80
+      num_sets: 40
+      set_max_iter: 60
+      gamma_dist_interval: [-0.24, 0.66]
+      stop_nconv: 1
+  - name: cap_3680
+    relay_bp:
+      implementation: f32
+      alpha: 0.90
+      gamma0: 0.125
+      pre_iter: 80
+      num_sets: 60
+      set_max_iter: 60
+      gamma_dist_interval: [-0.24, 0.66]
+      stop_nconv: 1

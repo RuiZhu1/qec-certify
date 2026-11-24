@@ -1,0 +1,20 @@
+# qLDPC smoke: pinned public [[18,4,3]] BB circuit, BP+OSD vs Relay-BP.
+name: qldpc_bb18
+seed: 20261123
+reference_circuit: bb18_d3_p003
+shots: 1000
+confidence: 0.95
+decoders: [bp_osd, relay_bp]
+bp_osd:
+  max_iter: 100
+  osd_order: 3
+  omp_thread_count: 1
+relay_bp:
+  gamma0: 0.1
+  pre_iter: 80
+  num_sets: 60
+  set_max_iter: 60
+  gamma_dist_interval: [-0.24, 0.66]
+  stop_nconv: 1
+latency_shots: 20
+latency_warmup: 5

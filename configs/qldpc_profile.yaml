@@ -1,0 +1,30 @@
+# Fine-grained fresh serial vs parallel profiling, with identical paper_like F32 settings.
+name: qldpc_profile
+reference_circuits: [bb144_d12_p003, bb144_d12_p0005]
+experiment_seeds: [20261124]
+shots: 100
+confidence: 0.95
+latency_shots: 0
+profile_shots: 20
+profile_warmup: 2
+candidates:
+  - name: serial
+    relay_bp:
+      implementation: f32
+      parallel: false
+      gamma0: 0.125
+      pre_iter: 80
+      num_sets: 60
+      set_max_iter: 60
+      gamma_dist_interval: [-0.24, 0.66]
+      stop_nconv: 1
+  - name: parallel
+    relay_bp:
+      implementation: f32
+      parallel: true
+      gamma0: 0.125
+      pre_iter: 80
+      num_sets: 60
+      set_max_iter: 60
+      gamma_dist_interval: [-0.24, 0.66]
+      stop_nconv: 1

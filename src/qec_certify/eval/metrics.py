@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import time
 from dataclasses import asdict, dataclass
 from statistics import NormalDist
 
@@ -28,6 +29,66 @@ class LERResult:
 
     def to_dict(self) -> dict[str, float | int]:
         return {**asdict(self), "ler": self.ler}
+
+
+@dataclass(frozen=True)
+class PerformanceResult:
+    """Offline batch-of-one prediction timings; these are not per-round streaming timings."""
+
+    mode: str
+    shots: int
+    warmup_shots: int
+    total_seconds: float
+    mean_latency_ms: float
+    p50_latency_ms: float
+    p95_latency_ms: float
+    p99_latency_ms: float
+    throughput_shots_per_second: float
+
+    def to_dict(self) -> dict[str, float | int | str]:
+        return asdict(self)
+
+
+def benchmark_decoder(
+    decoder: Decoder,
+    detection_events: np.ndarray,
+    *,
+    shots: int,
+    warmup_shots: int = 1,
+) -> PerformanceResult:
+    """Time individual predictions on the first ``shots`` detection-event rows.
+
+    Warmup calls reuse the first row and are excluded. Python call overhead is included, so
+    the result describes this offline API rather than a hardware streaming implementation.
+    """
+    dets = np.asarray(detection_events)
+    if dets.ndim != 2:
+        raise ValueError(f"detection_events must be 2-D, got {dets.shape}")
+    if not 0 < shots <= len(dets):
+        raise ValueError(f"latency shots must be in [1, {len(dets)}], got {shots}")
+    if warmup_shots < 0:
+        raise ValueError(f"warmup_shots must be non-negative, got {warmup_shots}")
+    for _ in range(warmup_shots):
+        decoder.predict(dets[:1])
+    latencies_ms = np.empty(shots, dtype=np.float64)
+    start = time.perf_counter()
+    for k in range(shots):
+        shot_start = time.perf_counter()
+        decoder.predict(dets[k : k + 1])
+        latencies_ms[k] = (time.perf_counter() - shot_start) * 1e3
+    total_seconds = time.perf_counter() - start
+    p50, p95, p99 = np.percentile(latencies_ms, [50, 95, 99])
+    return PerformanceResult(
+        mode="offline_batch1",
+        shots=shots,
+        warmup_shots=warmup_shots,
+        total_seconds=total_seconds,
+        mean_latency_ms=float(latencies_ms.mean()),
+        p50_latency_ms=float(p50),
+        p95_latency_ms=float(p95),
+        p99_latency_ms=float(p99),
+        throughput_shots_per_second=shots / total_seconds,
+    )
 
 
 def wilson_interval(num_errors: int, shots: int, confidence: float = 0.95) -> tuple[float, float]:

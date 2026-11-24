@@ -1,0 +1,60 @@
+# Pre-registered convergence study: only alpha changes; all other paper_like settings are fixed.
+name: qldpc_alpha
+seed: 20261124
+reference_circuit: bb144_d12_p0005
+confidence: 0.95
+validation_shots: 50
+validation_latency_shots: 10
+test_shots: 200
+test_latency_shots: 20
+profile_shots: 20
+profile_warmup: 2
+latency_warmup: 5
+baseline: bp_lsd
+evaluate_all: true
+candidates:
+  - name: alpha_none
+    relay_bp:
+      implementation: f32
+      gamma0: 0.125
+      pre_iter: 80
+      num_sets: 60
+      set_max_iter: 60
+      gamma_dist_interval: [-0.24, 0.66]
+      stop_nconv: 1
+  - name: alpha_0_95
+    relay_bp:
+      implementation: f32
+      alpha: 0.95
+      gamma0: 0.125
+      pre_iter: 80
+      num_sets: 60
+      set_max_iter: 60
+      gamma_dist_interval: [-0.24, 0.66]
+      stop_nconv: 1
+  - name: alpha_0_90
+    relay_bp:
+      implementation: f32
+      alpha: 0.90
+      gamma0: 0.125
+      pre_iter: 80
+      num_sets: 60
+      set_max_iter: 60
+      gamma_dist_interval: [-0.24, 0.66]
+      stop_nconv: 1
+  - name: alpha_ramp
+    relay_bp:
+      implementation: f32
+      alpha: 0
+      alpha_iteration_scaling_factor: 10
+      gamma0: 0.125
+      pre_iter: 80
+      num_sets: 60
+      set_max_iter: 60
+      gamma_dist_interval: [-0.24, 0.66]
+      stop_nconv: 1
+bp_lsd:
+  max_iter: 100
+  lsd_order: 0
+  lsd_method: LSD_0
+  omp_thread_count: 1

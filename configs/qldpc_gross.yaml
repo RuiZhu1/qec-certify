@@ -1,0 +1,17 @@
+# qLDPC scaling smoke: pinned public gross [[144,12,12]] circuit, Relay-BP only.
+# BP+OSD is evaluated on the small BB circuit until a practical gross-code budget is defined.
+name: qldpc_gross
+seed: 20261123
+reference_circuit: bb144_d12_p003
+shots: 1000
+confidence: 0.95
+decoders: [relay_bp]
+relay_bp:
+  gamma0: 0.1
+  pre_iter: 80
+  num_sets: 60
+  set_max_iter: 60
+  gamma_dist_interval: [-0.24, 0.66]
+  stop_nconv: 1
+latency_shots: 20
+latency_warmup: 5

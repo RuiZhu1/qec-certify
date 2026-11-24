@@ -1,0 +1,28 @@
+# Predeclared delayed-commit W sweep. W=distance is the full-history reference.
+# All widths at a distance reuse the same test shots for paired comparisons.
+name: m4_window_sweep
+seed: 20261123
+code:
+  family: rotated_surface
+  distance: [5, 7]
+noise:
+  model: circuit_level
+  p: 0.01
+memory_basis: Z
+rounds:
+  5: 5
+  7: 7
+shots:
+  5: 5000
+  7: 2000
+confidence: 0.95
+decoders: [mwpm, mwpm_correlated]
+latency_shots: 0
+streaming_method: delayed_commit
+window_rounds:
+  5: [2, 3, 4, 5]
+  7: [2, 3, 4, 5, 7]
+streaming_latency_shots: 20
+streaming_warmup: 2
+# Illustrative arrival rate only, not a hardware latency target.
+round_period_us: 1000

@@ -4,10 +4,16 @@ import math
 import numpy as np
 import pytest
 
-from qec_certify.codes import code_capacity_circuit, repetition_code, rotated_surface_code
+from qec_certify.codes import (
+    circuit_level_circuit,
+    code_capacity_circuit,
+    repetition_code,
+    rotated_surface_code,
+)
 from qec_certify.decoders.ml_exact import pauli_bruteforce_distribution, syndrome_class_distribution
 from qec_certify.noise import (
     BiasedPauli,
+    CircuitLevelNoise,
     CorrelatedPairs,
     Depolarizing,
     as_noise_model,
@@ -136,6 +142,84 @@ def test_make_noise_and_grid():
         params = noise.parameters()
         assert make_noise(params["model"], params["p"], params[noise.structure]) == noise
     assert BiasedPauli(0.1, 3).parameters() == {"model": "biased", "p": 0.1, "bias": 3}
+
+
+def test_circuit_level_channel_overrides_and_grid():
+    noise = CircuitLevelNoise(
+        0.01,
+        after_clifford_depolarization=0.02,
+        before_round_data_depolarization=0.03,
+        before_measure_flip_probability=0.04,
+        after_reset_flip_probability=0.05,
+    )
+    assert noise.stim_arguments() == {
+        "after_clifford_depolarization": 0.02,
+        "before_round_data_depolarization": 0.03,
+        "before_measure_flip_probability": 0.04,
+        "after_reset_flip_probability": 0.05,
+    }
+    grid = noise_grid(
+        {
+            "model": "circuit_level",
+            "p": [0.01, 0.02],
+            "heterogeneity": [0.0, 0.5],
+            "drift": [0.0, 0.5],
+            "noise_seed": 7,
+        }
+    )
+    assert len(grid) == 8
+    assert [(n.p, n.heterogeneity, n.drift) for n in grid[:4]] == [
+        (0.01, 0.0, 0.0),
+        (0.01, 0.0, 0.5),
+        (0.01, 0.5, 0.0),
+        (0.01, 0.5, 0.5),
+    ]
+    assert all(n.noise_seed == 7 for n in grid)
+
+
+def test_circuit_level_drift_is_linear_and_centred():
+    circuit = circuit_level_circuit(
+        rotated_surface_code(3), CircuitLevelNoise(0.01, drift=0.5), rounds=3
+    )
+    probabilities = [
+        probability
+        for inst in circuit.flattened()
+        if inst.name in {"DEPOLARIZE1", "DEPOLARIZE2", "X_ERROR", "Z_ERROR"}
+        for probability in inst.gate_args_copy()
+    ]
+    np.testing.assert_allclose(sorted(set(probabilities)), [0.0075, 0.01, 0.0125])
+
+
+def test_circuit_level_heterogeneity_is_seeded():
+    first = circuit_level_circuit(
+        rotated_surface_code(3),
+        CircuitLevelNoise(0.01, heterogeneity=0.5, noise_seed=7),
+        rounds=3,
+    )
+    second = circuit_level_circuit(
+        rotated_surface_code(3),
+        CircuitLevelNoise(0.01, heterogeneity=0.5, noise_seed=7),
+        rounds=3,
+    )
+    different = circuit_level_circuit(
+        rotated_surface_code(3),
+        CircuitLevelNoise(0.01, heterogeneity=0.5, noise_seed=8),
+        rounds=3,
+    )
+    assert first == second
+    assert first != different
+
+
+def test_circuit_level_scaled_probability_and_parameters_are_validated():
+    with pytest.raises(ValueError, match="exceeds 1"):
+        circuit_level_circuit(rotated_surface_code(3), CircuitLevelNoise(1.0, drift=2.0), rounds=3)
+    for make in (
+        lambda: CircuitLevelNoise(0.01, heterogeneity=-0.1),
+        lambda: CircuitLevelNoise(0.01, drift=2.1),
+        lambda: CircuitLevelNoise(0.01, noise_seed=-1),
+    ):
+        with pytest.raises(ValueError):
+            make()
 
 
 # --- descriptors ---------------------------------------------------------------------------

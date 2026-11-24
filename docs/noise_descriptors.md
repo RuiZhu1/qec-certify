@@ -6,9 +6,13 @@ Definitions of the noise-structure measures used as independent variables in RQ2
 
 ## Conventions
 
-- All implemented noise models are code-capacity Pauli channels on the data qubits
+- The descriptors below apply to the code-capacity Pauli channels on data qubits
   (`src/qec_certify/noise/models.py`): independent single-qubit channels, plus, for
   correlated noise, independent two-qubit channels on nearest-neighbour pairs.
+- `CircuitLevelNoise` instead parameterizes Stim's gate, idle, measurement and reset channels,
+  with optional seeded lognormal qubit heterogeneity and linear drift between rounds. It does
+  not currently expose these code-capacity descriptors, so circuit-level result rows omit
+  `descriptors` rather than reporting misleading values.
 - `E_q` is the Pauli error on data qubit `q` after all channels act (phases ignored), and
   `(E_a, E_b)` the joint error on two qubits. Both are computed exactly by composing every
   channel that touches those qubits and summing out all other qubits

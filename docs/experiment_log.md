@@ -423,3 +423,808 @@ d=5:
    0.15  MLP          100000   1.157e-01  1.193 +- 0.006  [1.186, 1.197]                       0.318
    0.15  MLP         1000000   1.054e-01  1.087 +- 0.003  [1.084, 1.089]                       0.693
 ```
+
+### 2026-11-23: M4 first circuit-level smoke benchmark, d=3 rotated surface code
+- Command: `python -m qec_certify.eval.baselines --config configs/m4_circuit_level_d3.yaml --out runs/m4_circuit_level_d3`
+- Config: `configs/m4_circuit_level_d3.yaml` (Stim standard rotated-surface memory, three rounds,
+  uniform Clifford/idle/measurement/reset noise, 1000 shots per cell, MWPM, correlated MWPM,
+  BP+OSD and Union-Find; 20 offline batch-of-one latency shots after five warmup calls)
+- Commit: code as uncommitted changes on `b0e3bf4dbe678136c170b2683fcf22277ff58258`; the JSON
+  records `b0e3bf4dbe678136c170b2683fcf22277ff58258-dirty`.
+- Outputs: `runs/m4_circuit_level_d3/baselines.json` (untracked; regenerate with the command above).
+- Outcome: the end-to-end circuit-level path runs with Stim 1.16.0, PyMatching 2.4.0 and ldpc
+  2.4.1. BP+OSD has the lowest observed error count at all three p values, but 1000 shots per cell
+  are too few to establish an accuracy ranking: the Wilson intervals overlap substantially.
+  Union-Find has higher observed LER in this small benchmark, as expected for a speed-oriented
+  baseline, but no latency conclusion is drawn from 20 offline calls.
+- Notes:
+  - These are whole-experiment LERs. The JSON's `ler_per_round` is an equivalent-hazard transform,
+    not a fitted physical error-per-round model.
+  - Performance fields are offline batch-of-one API timings including Python overhead, not
+    per-round hardware streaming results.
+  - Do not use this smoke run as evidence that BP+OSD is significantly better than MWPM. A later
+    experiment needs paired shots, more samples and a predeclared statistical comparison.
+
+```
+  d       p  decoder               errors/shots         LER       CI
+  3   0.005  mwpm                     17/1000       1.700e-02   [1.064e-02, 2.706e-02]
+  3   0.005  mwpm_correlated          18/1000       1.800e-02   [1.142e-02, 2.827e-02]
+  3   0.005  bp_osd                   16/1000       1.600e-02   [9.872e-03, 2.583e-02]
+  3   0.005  union_find               44/1000       4.400e-02   [3.294e-02, 5.855e-02]
+  3    0.01  mwpm                     53/1000       5.300e-02   [4.075e-02, 6.867e-02]
+  3    0.01  mwpm_correlated          49/1000       4.900e-02   [3.726e-02, 6.419e-02]
+  3    0.01  bp_osd                   48/1000       4.800e-02   [3.639e-02, 6.307e-02]
+  3    0.01  union_find              107/1000       1.070e-01   [8.932e-02, 1.277e-01]
+  3    0.02  mwpm                    165/1000       1.650e-01   [1.433e-01, 1.893e-01]
+  3    0.02  mwpm_correlated         161/1000       1.610e-01   [1.395e-01, 1.851e-01]
+  3    0.02  bp_osd                  147/1000       1.470e-01   [1.264e-01, 1.703e-01]
+  3    0.02  union_find              258/1000       2.580e-01   [2.318e-01, 2.860e-01]
+```
+
+### 2026-11-23: M4 d=3/5/7 heterogeneity and drift smoke matrix
+- Command: `python -m qec_certify.eval.baselines --config configs/m4_circuit_level_scaling.yaml --out runs/m4_circuit_level_scaling --workers 4`
+- Config: `configs/m4_circuit_level_scaling.yaml` (p=0.01; rounds=distance; uniform or
+  lognormal qubit heterogeneity 0.5, crossed with no drift or first-to-last-round drift 0.5;
+  shared noise seed 20261123; 1000/500/200 shots for d=3/5/7; four decoders and 20 offline
+  batch-of-one latency shots per cell)
+- Commit: code as uncommitted changes on `b0e3bf4dbe678136c170b2683fcf22277ff58258`; the JSON
+  records the corresponding `-dirty` provenance.
+- Outputs: `runs/m4_circuit_level_scaling/baselines.json` (untracked; 12 cells and 48 decoder
+  rows, including full LER/CI and performance fields; regenerate with the command above).
+- Outcome: all d=3/5/7 cells completed with four workers. The new circuit transformation is
+  suitable for reproducible scaling smoke experiments. BP+OSD evaluation took about 0.4--0.5 s
+  per d=3 cell, 8 s per d=5 cell and 20 s per d=7 cell in this run, compared with about 0.1 s
+  or less for MWPM-family evaluation. These are whole-cell evaluation times, not streaming
+  latency measurements.
+- Notes:
+  - This is a functionality and scaling smoke run, not a statistically powered comparison.
+    Confidence intervals are wide, especially at d=7, and observed decoder rankings must not be
+    presented as established advantages.
+  - Heterogeneity raises the observed LER in several d=3 and d=5 cells, but the d=7 sample is
+    too small for a stable conclusion. Drift cells use different sampled shots from uniform
+    cells, so differences also include sampling fluctuations.
+  - The heterogeneity and drift parameters are synthetic and reproducible, not fitted to a real
+    device. The same `noise_seed` fixes qubit factors across configurations; test-shot seeds
+    remain separated by experiment cell.
+  - The complete numerical table is the generated JSON rather than a hand-copied summary.
+
+### 2026-11-23: Causal-replay streaming latency and arrival-backlog smoke
+- Command: `python -m qec_certify.eval.baselines --config configs/m4_circuit_level_scaling.yaml --out runs/m4_circuit_level_scaling --workers 4`
+- Config: the same 12-cell scaling matrix as the preceding entry, plus three streaming shots
+  per cell, one warmup shot and an illustrative fixed arrival period of 1000 us per round.
+- Commit: code as uncommitted changes on `b0e3bf4dbe678136c170b2683fcf22277ff58258`; the JSON
+  records the corresponding `-dirty` provenance.
+- Outputs: `runs/m4_circuit_level_scaling/baselines.json` (regenerated with
+  `streaming_performance` alongside the unchanged sampled-LER rows).
+- Outcome: causal replay preserves the final offline predictions and exposes the expected
+  scaling cost. Under the illustrative 1 ms/round arrival rate, MWPM-family replay meets the
+  mean input rate in the uniform cells; BP+OSD does not at d=5 or d=7. Union-Find is marked
+  unsupported because zero-filled causal prefixes need not be realizable DEM syndromes.
+- Notes:
+  - `causal_replay` redecodes the full zero-filled history after every round, so work per shot
+    grows quadratically with the number of rounds. These numbers are not an optimized
+    incremental decoder or hardware online measurement.
+  - Throughput uses only the sum of measured decode calls; backlog fields replay those calls
+    against fixed-rate arrivals. `max_pending_rounds` includes queued and in-flight rounds.
+  - Only three shots per cell were timed. Percentiles and backlog values are smoke measurements,
+    not stable performance claims. The 1000 us period is illustrative, not a hardware target.
+
+Uniform-noise cells (generated from the JSON):
+
+```
+ d  decoder           p99 round latency   rounds/s   meets 1 kHz   max pending   growth/round
+ 3  mwpm                   0.005503 ms   210200       yes             1          0
+ 3  mwpm_correlated        0.004706 ms   250400       yes             1          0
+ 3  bp_osd                 0.048350 ms    36630       yes             1          0
+ 5  mwpm                   0.011670 ms   127800       yes             1          0
+ 5  mwpm_correlated        0.025700 ms    67100       yes             1          0
+ 5  bp_osd                20.720000 ms       61.53    no             13         15.25
+ 7  mwpm                   0.042580 ms    57860       yes             1          0
+ 7  mwpm_correlated        0.071900 ms    27140       yes             1          0
+ 7  bp_osd               110.500000 ms        9.411   no             21        105.3
+```
+
+### 2026-11-23: Fixed-window MWPM W=3, full-window correctness and boundary failure
+- Command: `python -m qec_certify.eval.baselines --config configs/m4_streaming_window.yaml --out runs/m4_streaming_window --workers 3`
+- Config: `configs/m4_streaming_window.yaml` (uniform circuit-level p=0.01, rounds=distance,
+  W=3, MWPM and correlated MWPM; 1000/500/200 shots for d=3/5/7; 20 streaming shots after two
+  warmups; illustrative 1000 us arrival period)
+- Commit: code as uncommitted changes on `b0e3bf4dbe678136c170b2683fcf22277ff58258`; the JSON
+  records the corresponding `-dirty` provenance.
+- Outputs: `runs/m4_streaming_window/baselines.json` (untracked; regenerate with the command above).
+- Outcome: full-window d=3 matches offline exactly for both decoders. Partial windows are fast
+  enough for the illustrative arrival rate, but the projected-boundary approximation causes
+  severe accuracy loss at d=5 and d=7. This implementation is a measurement baseline and a
+  negative result, not a viable production window decoder.
+- Notes:
+  - An initial implementation split `^`-separated DEM components into independent errors and
+    broke correlated matching. The corrected implementation preserves whole mechanisms and
+    separators; d=3 now has zero differing predictions out of 1000 for both decoders.
+  - Partial-window errors below are generated from the corrected JSON. They must not be compared
+    with the earlier invalid output that was overwritten.
+  - The next algorithmic requirement is boundary-aware/anchored decoding or exact incremental
+    matching. Further latency optimization of the naive projection is not scientifically useful.
+
+Corrected results:
+
+```
+ d  decoder           offline errors   W=3 errors   approximation           p99/round   meets 1 kHz
+ 3  mwpm                61/1000         61/1000     exact_full_history       0.007919 ms   yes
+ 3  mwpm_correlated      55/1000         55/1000     exact_full_history       0.010480 ms   yes
+ 5  mwpm                 43/500         169/500      projected_dem_boundary  0.010570 ms   yes
+ 5  mwpm_correlated      39/500         170/500      projected_dem_boundary  0.019970 ms   yes
+ 7  mwpm                 21/200          98/200      projected_dem_boundary  0.016700 ms   yes
+ 7  mwpm_correlated      18/200          96/200      projected_dem_boundary  0.031350 ms   yes
+```
+
+### 2026-11-23: Delayed-commit boundary anchoring improves but does not rescue W=3
+- Command: `python -m qec_certify.eval.baselines --config configs/m4_delayed_window.yaml --out runs/m4_delayed_window --workers 3`
+- Config: the same circuits, shots and W=3 as `m4_streaming_window.yaml`, but using
+  `streaming_method: delayed_commit` and matched-edge outputs. Only fully internal errors from
+  the oldest window round are committed; newer and boundary-crossing components remain in the tail.
+- Commit: code as uncommitted changes on `b0e3bf4dbe678136c170b2683fcf22277ff58258`; the JSON
+  records the corresponding `-dirty` provenance.
+- Outputs: `runs/m4_delayed_window/baselines.json` (untracked; regenerate with the command above).
+- Outcome: full-window d=3 again matches offline exactly. Delayed commit reduces partial-window
+  errors relative to naive projection on the same shots, but LER remains far above offline. It
+  is a useful causal baseline and negative result, not a production decoder.
+- Notes:
+  - d=5 errors fall from 169 to 119 (MWPM) and 170 to 115 (correlated), compared with the naive
+    projection. d=7 errors fall from 98 to 79 and 96 to 78 respectively.
+  - Despite the improvement, delayed-commit LER is about 0.23--0.24 at d=5 and 0.39--0.40 at d=7.
+    The illustrative arrival-rate test passes, but this accuracy is unacceptable.
+  - The next useful measurement is a predeclared W sweep (including a full-history point) with
+    paired shots and enough samples to separate approximation loss from sampling noise. Exact
+    incremental matching or a better boundary state remains necessary for a production claim.
+
+```
+ d  decoder           offline errors   naive W=3      delayed W=3   delayed LER   p99/round
+ 3  mwpm                61/1000         61/1000        61/1000       0.061        0.01838 ms
+ 3  mwpm_correlated      55/1000         55/1000        55/1000       0.055        0.01936 ms
+ 5  mwpm                 43/500         169/500        119/500       0.238        0.03403 ms
+ 5  mwpm_correlated      39/500         170/500        115/500       0.230        0.04513 ms
+ 7  mwpm                 21/200          98/200         79/200       0.395        0.05351 ms
+ 7  mwpm_correlated      18/200          96/200         78/200       0.390        0.07379 ms
+```
+
+### 2026-11-23: Predeclared paired W sweep rejects partial delayed-commit windows
+- Commands: `python -m qec_certify.eval.baselines --config configs/m4_window_sweep.yaml --out runs/m4_window_sweep --workers 4` and
+  `python experiments/analyze_m4_window_sweep.py runs/m4_window_sweep/baselines.json --out runs/m4_window_sweep/paired_analysis.json`
+- Config: `configs/m4_window_sweep.yaml`, fixed before running. d=5 uses W=2/3/4/5 with 5000
+  shots per width; d=7 uses W=2/3/4/5/7 with 2000 shots. W=distance is the full-history
+  reference. Every width at a distance reuses the same shots and includes MWPM and correlated MWPM.
+- Commit: code as uncommitted changes on `b0e3bf4dbe678136c170b2683fcf22277ff58258`; the JSON
+  records the corresponding `-dirty` provenance.
+- Outputs: `runs/m4_window_sweep/baselines.json` and `paired_analysis.json` (untracked; regenerate
+  with the commands above). Analysis uses exact two-sided McNemar tests, unadjusted for multiple comparisons.
+- Outcome: larger W reduces approximation loss, but every partial window remains significantly
+  worse than full history. Full-history rows have zero disagreements. The delayed-commit heuristic
+  is therefore stopped as a production candidate and retained only as a causal negative baseline.
+- Notes:
+  - This conclusion is based on paired per-shot transitions, not overlapping independent CIs.
+    `full_correct_window_wrong` and `full_wrong_window_correct` are both stored in the baseline JSON.
+  - At d=7, even W=5 gives LER 0.3080/0.3010 for plain/correlated MWPM against full-history
+    0.1035/0.0880. Spending more effort on this boundary heuristic is not justified by the scan.
+  - Latency is still measured on only 20 streaming shots per cell and is not the basis of this rejection.
+
+Generated paired analysis (p-values are unadjusted):
+
+```
+ d  w  decoder           full LER  window LER   full->W  W->full   p-value
+ 5  2  mwpm               0.0828      0.2798      1165       180  8.04e-177
+ 5  3  mwpm               0.0828      0.2376       918       144  1.93e-138
+ 5  4  mwpm               0.0828      0.1800       566        80  4.45e-91
+ 5  5  mwpm               0.0828      0.0828         0         0  1.00e+00
+ 5  2  mwpm_correlated    0.0714      0.2754      1193       173  1.22e-187
+ 5  3  mwpm_correlated    0.0714      0.2372       971       142  2.58e-152
+ 5  4  mwpm_correlated    0.0714      0.1760       616        93  1.76e-95
+ 5  5  mwpm_correlated    0.0714      0.0714         0         0  1.00e+00
+ 7  2  mwpm               0.1035      0.4385       765        95  7.83e-131
+ 7  3  mwpm               0.1035      0.3845       677       115  1.18e-97
+ 7  4  mwpm               0.1035      0.3660       616        91  1.20e-96
+ 7  5  mwpm               0.1035      0.3080       488        79  6.28e-73
+ 7  7  mwpm               0.1035      0.1035         0         0  1.00e+00
+ 7  2  mwpm_correlated    0.0880      0.4385       775        74  3.68e-148
+ 7  3  mwpm_correlated    0.0880      0.3890       695        93  1.02e-114
+ 7  4  mwpm_correlated    0.0880      0.3470       596        78  1.08e-99
+ 7  5  mwpm_correlated    0.0880      0.3010       499        73  5.42e-79
+ 7  7  mwpm_correlated    0.0880      0.0880         0         0  1.00e+00
+```
+
+### 2026-11-23: Public qLDPC BB and gross-code Relay-BP smoke benchmarks
+- Commands: `python -m qec_certify.eval.qldpc --config configs/qldpc_bb18.yaml --out runs/qldpc_bb18` and
+  `python -m qec_certify.eval.qldpc --config configs/qldpc_gross.yaml --out runs/qldpc_gross`
+- Config: `configs/qldpc_bb18.yaml` (1000 shots, BP+OSD product-sum with at most 100 iterations
+  and OSD-CS order 3, versus Relay-BP with 60 sets) and `configs/qldpc_gross.yaml` (1000 shots,
+  Relay-BP only with the same 60-set settings). Both use 20 offline latency shots after five warmups.
+- Reference data: public Relay-BP test circuits at upstream commit
+  `72341ef85cd45779e6483c338aef7ba85094eac1`, pinned with SHA-256 in
+  `src/qec_certify/codes/data/PROVENANCE.md`. Relay-BP is not a supported IBM product.
+- Commit: code as uncommitted changes on `b0e3bf4dbe678136c170b2683fcf22277ff58258`; each JSON
+  records the corresponding `-dirty` provenance and relay-bp 0.2.2.
+- Outputs: `runs/qldpc_bb18/qldpc.json` and `runs/qldpc_gross/qldpc.json` (untracked; regenerate
+  with the commands above).
+- Outcome: on BB [[18,4,3]], BP+OSD has 40/1000 errors and Relay-BP 33/1000. The paired
+  comparison has 12 BP-correct/Relay-wrong and 19 BP-wrong/Relay-correct shots, exact McNemar
+  p=0.2810, so no accuracy advantage is established. Relay-BP takes 0.92 s for the 1000-shot
+  evaluation versus 11.38 s for BP+OSD in this run, but these decoder configurations are not a
+  pre-registered paper reproduction.
+- Gross outcome: Relay-BP on the public gross [[144,12,12]] circuit has 0/1000 errors, with Wilson
+  95% interval [2.168e-19, 3.827e-03]. Zero observed errors is not evidence of zero LER. The run
+  takes 286.74 s; among the 20 timing shots, median whole-shot latency is 144.76 ms and p99 is
+  1794.08 ms. Default-parameter CPU latency is therefore far from a real-time claim.
+- Notes:
+  - Latency fields cover an entire 3- or 12-round shot, include Python overhead and are not
+    per-round hardware-streaming measurements. Twenty timing shots are smoke measurements only.
+  - The small-code accuracy comparison is paired; gross-code BP+OSD was not run because a
+    practical high-effort budget has not been defined. Do not claim a gross-code accuracy win.
+  - These public reference circuits and decoder implementations are external scientific assets,
+    not real hardware data and not a supported IBM product.
+
+```
+ code             decoder    errors/shots   LER         CI                         p50/shot    p99/shot
+ BB [[18,4,3]]    bp_osd       40/1000      0.040       [0.02951, 0.05401]       8.64 ms    36.43 ms
+ BB [[18,4,3]]    relay_bp     33/1000      0.033       [0.02359, 0.04598]       0.288 ms    8.93 ms
+ gross [[144,12,12]] relay_bp   0/1000      0.000       [2.168e-19, 0.003827]   144.76 ms  1794.08 ms
+```
+
+### 2026-11-23: Validation-only Relay-BP selection and independent gross-code test
+- Command: `python -m qec_certify.eval.qldpc_tune --config configs/qldpc_gross_tune.yaml --out runs/qldpc_gross_tune`
+- Config: `configs/qldpc_gross_tune.yaml`, fixed before running. Three Relay-BP candidates:
+  `paper_like` (gamma0=0.125, 80 + 60x60 iteration budget), `fast` (40 + 20x40) and `wide`
+  (gamma interval [-0.4, 0.8], 80 + 60x60). Selection uses only 50 validation shots and five
+  latency shots: fewest errors, then mean latency, iteration budget and name. The independent
+  test uses 300 shots with Relay-BP and practical BP+OSD-0 (product-sum, at most 100 iterations).
+- Commit: code as uncommitted changes on `b0e3bf4dbe678136c170b2683fcf22277ff58258`; the JSON
+  records the corresponding `-dirty` provenance and relay-bp 0.2.2.
+- Outputs: `runs/qldpc_gross_tune/tuning.json` (untracked; regenerate with the command above).
+- Outcome: `paper_like` is selected with 0/50 validation errors, versus 1/50 for `fast` and 3/50
+  for `wide`. On the independent test, Relay-BP has 0/300 errors and BP+OSD-0 has 27/300.
+  All 27 prediction disagreements are BP-wrong/Relay-correct; exact McNemar
+  p=1.4901e-08. Relay-BP finishes the test evaluation in 82.23 s, compared with 508.25 s for
+  BP+OSD-0.
+- Notes:
+  - This establishes an advantage over the **specific practical BP+OSD-0 configuration**, not over
+    the paper's high-effort BP+OSD-CS-10. No such stronger baseline was run.
+  - Zero Relay-BP errors has Wilson 95% interval [0, 0.01264]; it does not imply zero LER.
+  - Relay-BP mean/p50/p99 whole-shot latency is 260.81/164.14/1020.02 ms, versus
+    1540.02/1405.02/2364.41 ms for BP+OSD-0. Twenty timing shots are smoke measurements, and all
+    latencies include 12 rounds and Python overhead, not hardware streaming.
+  - A single easy-shot probe took about 0.24 s for BP+OSD-0, but the 300-shot evaluation took
+    508.25 s, demonstrating a heavy tail and the need for batch budget measurements.
+  - Validation and test seeds are distinct and recorded in the JSON; test shots were not used for selection.
+
+```
+ candidate   validation errors   mean validation latency   iteration budget
+ paper_like  0/50                86.79 ms                 3680
+ fast        1/50               273.61 ms                  840
+ wide        3/50              1365.65 ms                 3680
+
+ test decoder  errors/shots   LER         CI                  mean/shot   p99/shot
+ relay_bp      0/300          0.000       [0, 0.01264]       260.81 ms   1020.02 ms
+ bp_osd        27/300         0.090       [0.06259, 0.12778] 1540.02 ms  2364.41 ms
+```
+
+### 2026-11-24: Gross-code Relay-BP versus BP+LSD across p and independent seeds
+- Commands: `python -m qec_certify.eval.qldpc_sweep --config configs/qldpc_robustness.yaml --out runs/qldpc_robustness` and
+  `python experiments/analyze_qldpc_sweep.py runs/qldpc_robustness/sweep.json --out runs/qldpc_robustness/analysis.json`
+- Config: `configs/qldpc_robustness.yaml`, fixed before running. Public gross [[144,12,12]]
+  circuits at p=0.001/0.003/0.005, experiment seeds 20261124/20261125, 200 shots per cell.
+  Relay-BP is fixed to the earlier validation-selected `paper_like` settings with no retuning;
+  BP+LSD uses product-sum, at most 100 iterations and LSD-0. Ten offline latency shots per cell.
+- Commit: code as uncommitted changes on `b0e3bf4dbe678136c170b2683fcf22277ff58258`; each JSON
+  records the corresponding `-dirty` provenance and relay-bp 0.2.2.
+- Outputs: `runs/qldpc_robustness/cells.jsonl`, `sweep.json` and `analysis.json` (untracked;
+  regenerate with the commands above). Every completed cell is checkpointed, and reruns skip it.
+- Outcome: the trend is consistent across both seeds. At p=0.001 both methods have zero errors
+  and zero disagreements. At p=0.003 Relay-BP has zero errors in both cells and significantly
+  fewer errors than BP+LSD. At p=0.005 Relay-BP has 34/200 and 32/200 errors, compared with
+  99/200 and 112/200 for BP+LSD. All p=0.003 and p=0.005 paired tests favor Relay-BP.
+- Notes:
+  - This supports robustness of the fixed `paper_like` configuration over the tested p and seeds;
+    it does not establish superiority over high-effort BP+OSD-CS-10 or other decoders.
+  - Mean whole-shot Relay-BP latency ranges from 61 ms to 2597 ms across cells, with large
+    heavy-tail and seed variation. BP+LSD mean latency ranges from 693 ms to 4006 ms. These are
+    offline 12-round CPU measurements, not real-time or per-round hardware results.
+  - The first 15-minute attempt timed out during the third cell. The runner was changed to write
+    a checkpoint after every complete cell, and the full original 200-shot matrix was rerun without
+    a timeout. Partial decoder output from the killed run was not reused.
+  - McNemar p-values are per-cell and unadjusted for multiple comparisons. Pooled LERs below are
+    descriptive combinations of two seeds, not a replacement for the paired per-cell tests.
+
+```
+ p      seed       BP+LSD errors   Relay errors   McNemar p     BP mean/shot   Relay mean/shot
+ 0.001  20261124   0/200           0/200          1.0           734 ms         100 ms
+ 0.001  20261125   0/200           0/200          1.0           693 ms          61 ms
+ 0.003  20261124   8/200           0/200          0.0078125    1201 ms         214 ms
+ 0.003  20261125  11/200           0/200          0.0009766    1421 ms         241 ms
+ 0.005  20261124  99/200          34/200          3.42e-15     3763 ms        2597 ms
+ 0.005  20261125 112/200          32/200          3.69e-22     4006 ms         823 ms
+```
+
+Descriptive pooled results:
+
+```
+ p      decoder    errors/shots   pooled LER   Wilson 95% CI
+ 0.001  bp_lsd     0/400          0            [0, 0.00951]
+ 0.001  relay_bp   0/400          0            [0, 0.00951]
+ 0.003  bp_lsd     19/400         0.0475       [0.0306, 0.0730]
+ 0.003  relay_bp   0/400          0            [0, 0.00951]
+ 0.005  bp_lsd     211/400        0.5275       [0.479, 0.576]
+ 0.005  relay_bp   66/400         0.165        [0.132, 0.205]
+```
+
+### 2026-11-24: A 100 ms Relay-BP latency budget meets speed but fails accuracy
+- Command: `python -m qec_certify.eval.qldpc_tune --config configs/qldpc_realtime_tune.yaml --out runs/qldpc_realtime_tune`
+- Config: `configs/qldpc_realtime_tune.yaml`, fixed before running. Gross [[144,12,12]] at
+  p=0.003, 50 validation shots with ten timing shots, validation p99 budget 100 ms, and five
+  Relay-BP candidates (1/5/10/20/60 ensembles). Eligible candidates are ranked by errors first;
+  if none are eligible, the lowest-p99 candidate is marked `met: false`. Independent test uses
+  200 shots and BP+LSD-0 as the paired baseline.
+- Commit: code as uncommitted changes on `b0e3bf4dbe678136c170b2683fcf22277ff58258`; the JSON
+  records the corresponding `-dirty` provenance and relay-bp 0.2.2.
+- Outputs: `runs/qldpc_realtime_tune/tuning.json` (untracked; regenerate with the command above).
+- Outcome: only `single` meets the validation p99 budget (75.48 ms), so it is selected with
+  `latency_budget.met: true`. On the independent test, however, Relay-BP has 134/200 errors
+  (LER 0.670) versus 8/200 for BP+LSD (LER 0.040). BP-correct/Relay-wrong occurs 127 times and
+  the reverse once, McNemar p=7.58e-37. The speed constraint is met, but accuracy is unacceptable.
+- Notes:
+  - This is a negative accuracy--latency result, not a real-time demonstration. Meeting
+    `latency_budget.met` means only that the predeclared latency rule passed; it does not imply
+    any accuracy or industrial requirement passed.
+  - Validation already showed the accuracy collapse of small ensembles: 40/50, 23/50 and 1/50
+    errors for single/five/ten, versus 0/50 for twenty and paper_like. Their p99 latencies all
+    exceeded 100 ms, leaving `single` as the only eligible candidate. The selection rule was not
+    changed after seeing this outcome.
+  - Test mean/p50/p99 Relay-BP latency is 70.84/71.52/74.97 ms, versus
+    1417.99/1195.24/3996.08 ms for BP+LSD. Relay is faster but not useful at this accuracy.
+  - A future study must predeclare an accuracy constraint as well as latency, or report the full
+    Pareto frontier. It must not silently relax the accuracy requirement after the experiment.
+
+```
+ candidate   validation errors   validation p99   iteration budget   meets 100 ms
+ single      40/50               75.48 ms         40                 yes
+ five        23/50              224.36 ms        120                 no
+ ten          1/50              666.31 ms        440                 no
+ twenty       0/50              859.52 ms        840                 no
+ paper_like   0/50              338.70 ms       3680                 no
+
+ test decoder  errors/shots   LER   CI                    mean/shot   p99/shot
+ relay_bp      134/200        0.670 [0.6022, 0.7314]       70.84 ms   74.97 ms
+ bp_lsd        8/200          0.040 [0.02041, 0.07693]    1417.99 ms  3996.08 ms
+```
+
+### 2026-11-24: Relay-BP Pareto frontier shows an accuracy cliff, not a real-time sweet spot
+- Command: `python -m qec_certify.eval.qldpc_pareto --config configs/qldpc_pareto.yaml --out runs/qldpc_pareto`
+- Config: `configs/qldpc_pareto.yaml`, fixed before running. Gross [[144,12,12]] at p=0.003,
+  50 validation shots and 200 independent test shots. Validation selects all candidates
+  nondominated by error count and p99 latency. All frontier candidates share the same test shots
+  and one BP+LSD-0 baseline evaluation.
+- Commit: code as uncommitted changes on `b0e3bf4dbe678136c170b2683fcf22277ff58258`; the JSON
+  records the corresponding `-dirty` provenance and relay-bp 0.2.2.
+- Outputs: `runs/qldpc_pareto/pareto.json` (untracked; regenerate with the command above).
+- Outcome: the validation Pareto front is `paper_like`, `five` and `single`. On test, `single`
+  has LER 0.670 with p99 72.87 ms, `five` has LER 0.385 with p99 226.92 ms, and `paper_like`
+  has zero errors with p99 789.13 ms. There is no tested point that combines low LER with a
+  100 ms-level p99. This is an accuracy cliff, not a real-time sweet spot.
+- Notes:
+  - `paper_like` versus BP+LSD: 0/200 against 8/200, all eight disagreements favor Relay-BP,
+    McNemar p=0.0078125. BP+LSD p99 is 3912.25 ms. Accuracy and speed both favor `paper_like`
+    over this baseline, but not a 100 ms target.
+  - `single` and `five` are significantly worse than BP+LSD in accuracy (p=7.58e-37 and
+    5.72e-19 respectively), so their lower latency is not useful.
+  - `ten` and `twenty` were excluded before test because `paper_like` dominates them on the
+    validation error count and p99. They were not removed based on test results.
+  - A natural next implementation question is whether fixed-point/low-precision Relay-BP can
+    preserve `paper_like` accuracy while reducing latency; reducing ensembles has already failed.
+
+Validation:
+
+```
+ candidate   errors   p99        test errors   test LER   test p99    McNemar vs BP+LSD
+ single      40/50    72.66 ms   134/200       0.670      72.87 ms    7.58e-37 (worse)
+ five        23/50   214.19 ms    77/200       0.385     226.92 ms    5.72e-19 (worse)
+ ten          1/50   645.59 ms    not run      dominated   --          --
+ twenty       0/50   846.87 ms    not run      dominated   --          --
+ paper_like   0/50   317.62 ms     0/200       0.000     789.13 ms    0.0078125 (better)
+```
+
+Baseline BP+LSD: 8/200, LER 0.040, mean 1348.24 ms, p99 3912.25 ms.
+
+### 2026-11-24: Integer Relay-BP preserves decisions and reduces gross-code latency
+- Commands: `python -m qec_certify.eval.qldpc_pareto --config configs/qldpc_precision.yaml --out runs/qldpc_precision` and
+  `python experiments/analyze_qldpc_precision.py runs/qldpc_precision/pareto.json --out runs/qldpc_precision/implementation_pairs.json`
+- Config: `configs/qldpc_precision.yaml`, fixed before running. Gross [[144,12,12]] at p=0.003,
+  identical `paper_like` algorithm settings for F32, I32 and I64; I32/I64 use the upstream
+  `data_scale_value=8` and `max_data_value=65535`. `evaluate_all` tests every implementation on
+  the same 200 shots with 20 timing shots and one BP+LSD-0 baseline.
+- Commit: code as uncommitted changes on `b0e3bf4dbe678136c170b2683fcf22277ff58258`; the JSON
+  records the corresponding `-dirty` provenance and relay-bp 0.2.2.
+- Outputs: `runs/qldpc_precision/pareto.json` and `implementation_pairs.json` (untracked;
+  regenerate with the commands above).
+- Outcome: all three implementations have 0/200 errors and decode success rate 100%. The separate
+  per-shot comparison finds zero disagreements for F32-vs-I32, F32-vs-I64 and I32-vs-I64.
+  I32 has the lowest mean and p99 latency in this run.
+- Notes:
+  - Mean iterations are 134.02 for F32 and 135.49 for the integer implementations, so the speedup
+    is not explained by doing dramatically less work. Maximum iterations are 3287 and 2717.
+  - All three have eight BP+LSD-wrong/Relay-correct transitions and McNemar p=0.0078125 over the
+    shared BP+LSD-0 baseline. Accuracy comparisons between implementations show exact agreement,
+    not merely equal aggregate LER.
+  - A small synthetic DEM exposed unsuccessful integer candidates during development. The wrapper
+    now uses detailed results, falls back to no-flip on failure and records failure rates; no
+    unsuccessful candidate is returned as a valid correction. All 200 gross shots succeed here.
+  - These integer/scaled implementations are not an FPGA fixed-point proof. Results are limited to
+    this circuit, p, seed and `paper_like` settings, and require cross-p/seed validation.
+
+```
+ implementation  errors   success   mean iterations   mean/shot   p99/shot   decisions vs others
+ f32             0/200    100%      134.02            234.44 ms   799.47 ms  0/200 disagreements
+ i32_scaled      0/200    100%      135.49            155.59 ms   290.93 ms  0/200 disagreements
+ i64_scaled      0/200    100%      135.49            169.55 ms   315.78 ms  0/200 disagreements
+```
+
+### 2026-11-24: I32 decision equivalence and speed advantage break down at p=0.005
+- Command: `python -m qec_certify.eval.qldpc_precision_sweep --config configs/qldpc_precision_robustness.yaml --out runs/qldpc_precision_robustness`
+- Config: `configs/qldpc_precision_robustness.yaml`, fixed before running. Gross [[144,12,12]]
+  at p=0.001/0.003/0.005, experiment seeds 20261124/20261125, 200 shots per cell. F32 and
+  I32 scaled use identical `paper_like` settings; each cell samples shots once and compares both
+  implementations on those shots, with ten latency shots.
+- Commit: code as uncommitted changes on `b0e3bf4dbe678136c170b2683fcf22277ff58258`; the JSON
+  records the corresponding `-dirty` provenance and relay-bp 0.2.2.
+- Outputs: `runs/qldpc_precision_robustness/cells.jsonl` and `precision_sweep.json` (untracked;
+  regenerate with the command above). Each completed cell is checkpointed.
+- Outcome: p=0.001 and p=0.003 retain zero prediction disagreements and 100% decode success.
+  At p=0.005 there are 20 and 25 disagreements, so exact decision equivalence does not hold.
+  I32 has fewer observed errors (28 vs 37 and 37 vs 43), but McNemar p=0.0636 and 0.3075 does
+  not establish an accuracy improvement. I32 is also slower at p=0.005, with much worse tails.
+- Notes:
+  - At p=0.005, F32 success rates are 0.82/0.79 and I32 rates are 0.86/0.815. Failed decodes
+    fall back to no-flip and remain separately reported; LER must not be interpreted without
+    these success rates.
+  - F32 mean/p99 latency at p=0.005 is 2556/6530 ms and 858/3399 ms; I32 is 3399/8565 ms and
+    1244/7432 ms. The low-p speed advantage does not extrapolate to high p.
+  - These results motivate a failure-aware fallback (for example BP+LSD on failed shots) or
+    validation-only quantization tuning, not a claim that integer implementations are universally
+    equivalent or faster.
+
+```
+ p      seed       F32 errors/success   I32 errors/success   disagreements   p-value   F32 mean/p99     I32 mean/p99
+ 0.001  20261124   0/200, 100%          0/200, 100%          0               1.0       103/364 ms       100/287 ms
+ 0.001  20261125   0/200, 100%          0/200, 100%          0               1.0        64/97 ms        80/143 ms
+ 0.003  20261124   0/200, 100%          0/200, 100%          0               1.0       204/441 ms       160/283 ms
+ 0.003  20261125   0/200, 100%          0/200, 100%          0               1.0       247/698 ms       267/672 ms
+ 0.005  20261124  37/200, 82%          28/200, 86%           20              0.0636    2556/6530 ms    3399/8565 ms
+ 0.005  20261125  43/200, 79%          37/200, 81.5%         25              0.3075     858/3399 ms    1244/7432 ms
+```
+
+### 2026-11-24: Failure-aware BP+LSD fallback improves accuracy but adds a large tail
+- Command: `python -m qec_certify.eval.qldpc --config configs/qldpc_fallback.yaml --out runs/qldpc_fallback`
+- Config: `configs/qldpc_fallback.yaml`, fixed before running. Gross [[144,12,12]] at p=0.005,
+  seed 20261124, 200 shared shots. Compare BP+LSD-0, F32 Relay-BP with no-flip failure handling,
+  and Relay-BP with BP+LSD invoked only on unsuccessful shots. Relay uses fixed `paper_like`
+  parameters. Ten offline latency shots per decoder.
+- Commit: code as uncommitted changes on `b0e3bf4dbe678136c170b2683fcf22277ff58258`; the JSON
+  records the corresponding `-dirty` provenance and relay-bp 0.2.2.
+- Outputs: `runs/qldpc_fallback/qldpc.json` (untracked; regenerate with the command above).
+- Outcome: Relay fails on 36/200 shots (18%). Fallback corrects seven previously wrong shots and
+  introduces zero new errors, reducing LER from 0.185 to 0.150; exact McNemar p=0.015625 versus
+  no fallback. The hybrid also beats BP+LSD-0, with all 69 baseline-wrong/hybrid-correct
+  transitions in its favor and p=3.39e-21. Accuracy improves, but the latency tail is much worse.
+- Notes:
+  - Hybrid mean/p99 latency is 4276/14225 ms, versus 2512/6387 ms for no-fallback Relay and
+    3784/8525 ms for BP+LSD. The ten-shot timing sample shows no stable latency advantage.
+  - Total evaluation time is 667.94 s for hybrid, 868.87 s for BP+LSD and 439.88 s for Relay.
+    Fallback uses BP+LSD on only 18% of shots, but its measured tail remains unacceptable for
+    real-time claims. Total-time and ten-shot latency summaries describe different samples and
+    should not be conflated.
+  - A useful next step is a cheaper/faster fallback or a timeout/parallel fallback policy, not
+    simply increasing the fallback rate.
+
+```
+ decoder             errors   LER     Relay failures   fallback calls   mean/shot   p99/shot   total evaluation
+ bp_lsd              99/200   0.495   --               --               3784 ms     8525 ms    868.87 s
+ relay_bp            37/200   0.185   36 (18%)         0                2512 ms     6387 ms    439.88 s
+ relay_bp_fallback   30/200   0.150   36 (18%)         36 (18%)         4276 ms    14225 ms    667.94 s
+```
+
+### 2026-11-24: Short Relay retry is cheaper than BP fallback but not significantly better
+- Command: `python -m qec_certify.eval.qldpc --config configs/qldpc_retry.yaml --out runs/qldpc_retry`
+- Config: `configs/qldpc_retry.yaml`, fixed before running. Gross [[144,12,12]] at p=0.005,
+  seed 20261124, 200 shared shots. Primary F32 Relay uses fixed `paper_like` settings; only its
+  failed shots run a shorter F32 Relay retry with an independent seed and a 40 + 20x40 budget.
+- Commit: code as uncommitted changes on `b0e3bf4dbe678136c170b2683fcf22277ff58258`; the JSON
+  records the corresponding `-dirty` provenance and relay-bp 0.2.2.
+- Outputs: `runs/qldpc_retry/qldpc.json` (untracked; regenerate with the command above).
+- Outcome: primary fails 36/200 shots. Retry fails 31 of those 36, leaving a final failure rate
+  of 15.5% versus 18% for primary. It corrects five previously wrong shots and introduces zero
+  new errors, reducing LER from 0.185 to 0.160. Exact McNemar p=0.0625, so the accuracy
+  improvement is not statistically established.
+- Notes:
+  - Retry mean/p99 latency is 2948/8056 ms, versus 2575/6588 ms for no retry. Total evaluation
+    time is 495.96 s versus 440.67 s. The retry adds cost rather than solving the latency problem.
+  - The previous BP+LSD fallback had LER 0.150, p=0.015625 over no fallback, and total evaluation
+    time 667.94 s. Relay retry is cheaper but has weaker evidence and worse observed LER.
+  - This closes the short-retry configuration as a clear production recommendation. Further work
+    needs a better algorithm, validation-only retry/quantization tuning, or hardware/software
+    integration measurements rather than another uncontrolled fallback variant.
+
+```
+ decoder             errors   LER     final failure rate   mean/shot   p99/shot   total evaluation
+ relay_bp            37/200   0.185   18%                  2575 ms     6588 ms    440.67 s
+ relay_bp_fallback   32/200   0.160   15.5%                2948 ms     8056 ms    495.96 s
+```
+
+### 2026-11-24: Fresh-state serial and parallel Relay agree; parallelism improves throughput only
+- Command: `python -m qec_certify.eval.qldpc_precision_sweep --config configs/qldpc_parallel.yaml --out runs/qldpc_parallel`
+- Config: `configs/qldpc_parallel.yaml`, fixed before running. Gross [[144,12,12]] at
+  p=0.003/0.005, seed 20261124, 200 shared shots per cell. Serial and Rayon-parallel Relay use
+  identical F32 `paper_like` parameters, with ten batch-of-one timing shots per decoder.
+- Commit: code as uncommitted changes on `b0e3bf4dbe678136c170b2683fcf22277ff58258`; the JSON
+  records the corresponding `-dirty` provenance and relay-bp 0.2.2.
+- Outputs: `runs/qldpc_parallel/cells.jsonl` and `precision_sweep.json` (untracked; regenerate
+  with the command above).
+- Outcome: serial and parallel have zero prediction disagreements and identical success rates and
+  iteration counts at both p values. Parallel reduces whole-batch evaluation time from 63.08 s
+  to 42.66 s at p=0.003 (about 1.48x) and from 436.45 s to 325.91 s at p=0.005 (about 1.34x).
+- Notes:
+  - Batch-of-one mean/p99 latency is 251/544 ms serial versus 226/529 ms parallel at p=0.003,
+    and 2052/6306 ms versus 2061/6446 ms at p=0.005. There is no meaningful single-shot latency
+    improvement, so this is a throughput result, not a real-time tail-latency result.
+  - The public serial batch path was found to carry state between shots. The project now constructs
+    a fresh native decoder per shot for serial decoding and uses independent runner clones for
+    parallel decoding. Fresh, serial, reversed-order and parallel predictions are regression-tested.
+  - Earlier Relay batch results were produced before this state-carryover fix and should be treated
+    as requiring rerun for independent-shot semantics. The present fresh-state runs are the
+    reference for subsequent comparisons; old numerical entries are retained as historical logs,
+    not silently rewritten.
+
+```
+ p      mode      errors   success   mean iterations   batch time   batch1 mean   batch1 p99
+ 0.003  serial    0/200    100%      147.045           63.08 s      251 ms        544 ms
+ 0.003  parallel  0/200    100%      147.045           42.66 s      226 ms        529 ms
+ 0.005  serial    37/200   81.5%     1238.86          436.45 s     2052 ms       6306 ms
+ 0.005  parallel  37/200   81.5%     1238.86          325.91 s     2061 ms       6446 ms
+```
+
+### 2026-11-24: Fresh-state regeneration of the core Relay benchmarks
+- Commands: `python -m qec_certify.eval.qldpc_tune --config configs/qldpc_gross_tune.yaml --out runs/qldpc_gross_tune_fresh`,
+  `python -m qec_certify.eval.qldpc --config configs/qldpc_bb18.yaml --out runs/qldpc_bb18_fresh`, and
+  `python -m qec_certify.eval.qldpc_precision_sweep --config configs/qldpc_core_fresh.yaml --out runs/qldpc_core_fresh`
+- Config: existing gross-tuning and BB18 configs, plus `configs/qldpc_core_fresh.yaml` for
+  fresh F32/I32 at p=0.003/0.005, seed 20261124, 200 shared shots and ten latency shots.
+- Commit: code as uncommitted changes on `b0e3bf4dbe678136c170b2683fcf22277ff58258`; new JSONs
+  record the corresponding `-dirty` provenance and relay-bp 0.2.2.
+- Outputs: `runs/qldpc_gross_tune_fresh/tuning.json`, `runs/qldpc_bb18_fresh/qldpc.json`, and
+  `runs/qldpc_core_fresh/precision_sweep.json` (untracked; regenerate with the commands above).
+- Outcome: gross selection and final paired result are unchanged: `paper_like`, Relay 0/300 and
+  BP+OSD-0 27/300, p=1.49e-08. Fresh BB18 Relay has 36/1000 rather than the old 33/1000; paired
+  p=0.5966, so the no-significant-accuracy-advantage conclusion is unchanged. F32/I32 retain exact
+  agreement at p=0.003 but disagree at p=0.005, where I32 remains slower and not significantly
+  more accurate.
+- Notes:
+  - Fresh p=0.005 errors are F32 37/200 and I32 30/200, with 19 disagreements and McNemar
+    p=0.1671. The old stateful I32 result was 28/200. The fresh result supersedes it.
+  - Fresh p=0.003 F32/I32 have 0/200 errors, 100% success and zero prediction disagreements.
+    I32 batch-of-one timing is lower in this small sample, but its total evaluation time is
+    72.50 s versus 63.77 s for F32; no uniform speedup claim is made from these mixed summaries.
+  - Fresh p=0.005 F32 mean/p99 latency is 2049/6286 ms and I32 is 2521/8335 ms; total evaluation
+    time is 437.57 s versus 507.57 s. High-p integerization is neither equivalent nor faster here.
+  - All old stateful-batch numerical entries remain historical logs only. The `_fresh` outputs and
+    fresh-state parallel run are the current reference for subsequent claims.
+
+```
+ benchmark       old result                    fresh result                    conclusion
+ gross tuning    0/300 vs 27/300, same pairing  same selected candidate/result  unchanged
+ BB18 Relay      33/1000, p=0.2810              36/1000, p=0.5966              no significant advantage
+ F32/I32 p=.003  0/200 each, zero disagreements  0/200 each, zero disagreements exact at low p
+ F32/I32 p=.005  37/200 vs 28/200               37/200 vs 30/200, p=0.1671     not equivalent; not significant
+```
+
+### 2026-11-24: Relay profiling identifies native BP work and nonconvergence as the bottleneck
+- Command: `python -m qec_certify.eval.qldpc_precision_sweep --config configs/qldpc_profile.yaml --out runs/qldpc_profile`
+- Config: `configs/qldpc_profile.yaml`, fixed before running. Gross [[144,12,12]] at
+  p=0.003/0.005, seed 20261124, 100 evaluation shots and 20 profiled batch-of-one shots per
+  decoder. Serial uses a fresh native decoder per shot; parallel uses independent runner clones.
+  Both use identical F32 `paper_like` parameters.
+- Commit: code as uncommitted changes on `2381ff5` after the baseline commit; the JSON records
+  the corresponding dirty provenance.
+- Outputs: `runs/qldpc_profile/cells.jsonl` and `precision_sweep.json` (untracked; regenerate
+  with the command above).
+- Outcome: native message passing dominates latency. At p=0.005 all three failed profiled shots
+  use exactly 3680 iterations and have mean latency 6628 ms serial/6574 ms parallel. Successful
+  shots also have a large tail, with up to 3608 iterations. Python overhead is below 0.5 ms and
+  serial initialization is about 37 ms, so neither is the main bottleneck.
+- Notes:
+  - At p=0.003 serial mean latency is 247.86 ms, comprising about 36.80 ms initialization,
+    210.71 ms native decode and 0.34 ms remaining overhead. The iteration p99/max is 554/603.
+  - At p=0.005 serial mean latency is 2460.96 ms, with 2423.97 ms native decode, 36.63 ms
+    initialization and 0.36 ms remaining overhead. Iteration p99/max is 3680/3680.
+  - Parallel batch-of-one latency is essentially unchanged, as expected. Whole-batch evaluation
+    is faster: 22.15 s versus 31.43 s at p=0.003 and 200.83 s versus 260.69 s at p=0.005.
+    This is again throughput, not lower tail latency.
+  - Optimization should target native iteration cost, nonconvergence and successful-shot tails.
+    Python-only optimization or removing fresh initialization cannot meet the latency problem.
+
+```
+ p      mode      iterations p99/max   failure iterations   mean latency   init mean   native mean   Python mean
+ 0.003  serial    554/603             --                 247.86 ms      36.80 ms    210.71 ms     0.34 ms
+ 0.003  parallel  554/603             --                 210.60 ms      --          210.55 ms     0.05 ms
+ 0.005  serial    3680/3680           3680 (all failures) 2460.96 ms     36.63 ms   2423.97 ms    0.36 ms
+ 0.005  parallel  3680/3680           3680 (all failures) 2425.60 ms     --         2425.53 ms    0.07 ms
+```
+
+### 2026-11-24: Early BP+LSD takeover removes final failures but not the latency tail
+- Command: `python -m qec_certify.eval.qldpc_pareto --config configs/qldpc_early_fallback.yaml --out runs/qldpc_early_fallback`
+- Config: `configs/qldpc_early_fallback.yaml`, fixed before running. Gross [[144,12,12]] at
+  p=0.005, seed 20261124, 20 validation shots and 100 shared test shots. Compare 10/20/60
+  Relay ensembles followed by BP+LSD-0 only on unsuccessful Relay shots, against one BP+LSD-0
+  baseline evaluation. Ten latency shots per decoder.
+- Commit: code as uncommitted changes on `2381ff5`; the JSON records the corresponding dirty
+  provenance and relay-bp 0.2.2.
+- Outputs: `runs/qldpc_early_fallback/pareto.json` (untracked; regenerate with the command above).
+- Outcome: all hybrids have zero final decode failures and significantly fewer errors than the
+  BP+LSD baseline. More Relay work improves hybrid accuracy, but increases the tail. Ten/fallback
+  has the lowest p99 among hybrids, yet 58% of shots need BP+LSD and its p99 is approximately
+  the same as the baseline. The early-takeover hypothesis does not solve the latency problem.
+- Notes:
+  - BP+LSD baseline has 53/100 errors, mean/p99 4178/6486 ms. The hybrids have 35/100, 27/100
+    and 12/100 errors, with 58%, 46% and 19% primary failure rates respectively.
+  - Hybrid mean/p99 latencies are 2513/6476 ms, 2490/7475 ms and 3067/11873 ms. Accuracy and
+    latency remain strongly coupled; no production sweet spot is established.
+  - All baseline-wrong/hybrid-correct transitions favor the hybrids, with McNemar p values
+    7.63e-06, 2.98e-08 and 9.09e-13. These accuracy gains do not imply real-time suitability.
+  - Further work should target native iteration cost or a fundamentally better nonconvergence
+    strategy, not continue multiplying Relay-plus-BP fallback budgets.
+
+```
+ candidate         errors   LER    primary failure rate   final failures   mean/shot   p99/shot   McNemar vs BP
+ ten_fallback      35/100   0.35   58%                    0               2513 ms     6476 ms    7.63e-06
+ twenty_fallback   27/100   0.27   46%                    0               2490 ms     7475 ms    2.98e-08
+ paper_fallback    12/100   0.12   19%                    0               3067 ms    11873 ms   9.09e-13
+```
+
+### 2026-11-24: Alpha=0.90 improves average convergence but not the failure-driven tail
+- Command: `python -m qec_certify.eval.qldpc_pareto --config configs/qldpc_alpha.yaml --out runs/qldpc_alpha`
+- Config: `configs/qldpc_alpha.yaml`, fixed before running. Gross [[144,12,12]] at p=0.005,
+  seed 20261124, 50 validation shots and 200 shared test shots. Compare alpha=None, 0.95, 0.90
+  and an iteration ramp (alpha=0, scaling factor 10), all with otherwise identical F32
+  `paper_like` settings. `evaluate_all` includes every candidate on test. BP+LSD-0 is the shared
+  baseline; 20 latency/profile shots per candidate.
+- Commit: code as uncommitted changes on `2381ff5`; the JSON records the corresponding dirty
+  provenance and relay-bp 0.2.2.
+- Outputs: `runs/qldpc_alpha/pareto.json` (untracked; regenerate with the command above).
+- Outcome: alpha=0.90 gives the best accuracy and average convergence in this cell: 18/200 errors,
+  91% success and 806.275 mean iterations, compared with alpha=None's 37/200, 81.5% and 1238.86.
+  Mean latency falls from 1641.93 ms to 1046.35 ms. However, p99 remains about 6.3 s because
+  failed decodes still exhaust the 3680-iteration budget.
+- Notes:
+  - Alpha=0.95 gives 21/200 errors and 89.5% success; ramp gives 26/200 and 87%. Alpha=0.90 is
+    the most promising candidate in this cell, but requires cross-p/seed validation.
+  - All candidates significantly outperform the shared BP+LSD-0 baseline in accuracy, with paired
+    p values from 6.42e-14 to 1.42e-21. This does not imply real-time capability.
+  - Failure-shot mean latency remains 6.21--6.28 s across candidates. Alpha improves average
+    behavior, not the failure-driven tail; a separate tail strategy or faster native iteration
+    implementation is still required.
+
+```
+ candidate    errors   success   mean iterations   mean/shot   p99/shot   failure mean
+ alpha_none   37/200   81.5%     1238.86           1642 ms     6254 ms    6209 ms
+ alpha_0_95   21/200   89.5%      863.21           1397 ms     6362 ms    6250 ms
+ alpha_0_90   18/200   91.0%      806.28           1046 ms     6265 ms    6231 ms
+ alpha_ramp   26/200   87.0%      924.81           1336 ms     6352 ms    6275 ms
+```
+
+### 2026-11-24: Alpha=0.90 accuracy and average-convergence gains replicate across seeds
+- Command: `python -m qec_certify.eval.qldpc_precision_sweep --config configs/qldpc_alpha_robustness.yaml --out runs/qldpc_alpha_robustness`
+- Config: `configs/qldpc_alpha_robustness.yaml`, fixed before running. Gross [[144,12,12]]
+  at p=0.001/0.003/0.005, seeds 20261124/20261125, 200 shared shots per cell. Compare
+  alpha=None and alpha=0.90 with otherwise identical F32 `paper_like` settings. Ten latency
+  shots and 20 profile shots per decoder.
+- Commit: code as uncommitted changes on `2381ff5`; the JSON records the corresponding dirty
+  provenance and relay-bp 0.2.2.
+- Outputs: `runs/qldpc_alpha_robustness/cells.jsonl` and `precision_sweep.json` (untracked;
+  regenerate with the command above).
+- Outcome: at p=0.001/0.003 both variants have zero errors and zero prediction disagreements.
+  At p=0.005, alpha=0.90 improves errors from 37 to 18 and from 50 to 20 across the two seeds.
+  Success rates improve from 81.5%/75.5% to 91.0%/90.0%. McNemar p values are 2.10e-05 and
+  2.27e-07, so the accuracy advantage replicates across independent seeds.
+- Notes:
+  - High-p mean iterations fall from 1238.86 to 806.28 and from 1424.14 to 921.13. Mean latency
+    also decreases. This supports a stable average-convergence benefit, not only a single-cell effect.
+  - Failure-driven tail remains: all failure shots still use 3680 iterations, and p99 remains
+    about 5.75--6.30 s. Low-p tail measurements also vary between seeds, so no general speedup
+    percentage is claimed.
+  - Alpha=0.90 is a stronger default candidate for subsequent work, but it does not solve
+    real-time latency and still needs hardware-data validation.
+
+```
+ p      seed       alpha=None errors/success   alpha=0.90 errors/success   McNemar p   mean iterations none -> 0.90
+ 0.001  20261124   0/200, 100%                0/200, 100%                 1.0         38.61 -> 35.91
+ 0.001  20261125   0/200, 100%                0/200, 100%                 1.0         35.86 -> 34.58
+ 0.003  20261124   0/200, 100%                0/200, 100%                 1.0        147.05 -> 117.38
+ 0.003  20261125   0/200, 100%                0/200, 100%                 1.0        135.65 -> 132.54
+ 0.005  20261124  37/200, 81.5%              18/200, 91.0%                2.10e-05   1238.86 -> 806.28
+ 0.005  20261125  50/200, 75.5%              20/200, 90.0%                2.27e-07   1424.14 -> 921.13
+```
+
+### 2026-11-24: Iteration caps trade away accuracy for tail latency at every tested budget
+- Command: `python -m qec_certify.eval.qldpc_precision_sweep --config configs/qldpc_tail_budget.yaml --out runs/qldpc_tail_budget`
+- Config: `configs/qldpc_tail_budget.yaml`, fixed before running. Gross [[144,12,12]] at
+  p=0.005, seeds 20261124/20261125, 200 shared shots per cell. All candidates use F32,
+  alpha=0.90 and otherwise identical `paper_like` settings. Only the total iteration cap changes:
+  680/1280/2480/3680. Ten latency shots and 20 profile shots per decoder.
+- Commit: code as uncommitted changes on `2381ff5`; the JSON records the corresponding dirty
+  provenance and relay-bp 0.2.2.
+- Outputs: `runs/qldpc_tail_budget/cells.jsonl` and `precision_sweep.json` (untracked;
+  regenerate with the command above).
+- Outcome: lower caps reduce p99 approximately in line with the iteration budget, but every
+  capped configuration has significantly more errors than the full 3680 budget on both seeds.
+  There is no free tail truncation in the current implementation.
+- Notes:
+  - Against cap=3680, all cap=680/1280/2480 comparisons have zero `capped_correct_full_wrong`
+    transitions and 36/23/7 or 56/23/6 reverse transitions. McNemar p values are
+    2.91e-11/2.38e-07/0.015625 and 2.78e-17/2.38e-07/0.03125 respectively.
+  - Cap=680 reaches p99 about 1.16--1.19 s, but LER is 0.27/0.38 and success only 73%/62%.
+    Cap=2480 still has significantly worse accuracy than the full budget despite p99 about 4 s.
+  - Stop this parameter-only tail-truncation route. Further progress needs faster native
+    iterations, a better nonconvergence mechanism, or a fundamentally different decoder.
+
+```
+ cap    seed       errors   LER    success   mean iterations   mean/shot   p99/shot
+ 680    20261124   54/200   0.27   73.0%     350.84            601 ms      1192 ms
+ 1280   20261124   41/200   0.205  79.5%     490.47            922 ms      2214 ms
+ 2480   20261124   25/200   0.125  87.5%     681.97           1317 ms      4230 ms
+ 3680   20261124   18/200   0.090  91.0%     806.28           1729 ms      6266 ms
+ 680    20261125   76/200   0.380  62.0%     410.43            562 ms      1158 ms
+ 1280   20261125   43/200   0.215  78.5%     590.84            674 ms      2124 ms
+ 2480   20261125   26/200   0.130  87.0%     782.51            872 ms      3961 ms
+ 3680   20261125   20/200   0.100  90.0%     921.13           1074 ms      5809 ms
+```
+
+### 2026-11-24: Fresh-state rerun confirms robustness and fallback conclusions, not short-retry benefit
+- Commands: `python -m qec_certify.eval.qldpc_sweep --config configs/qldpc_robustness.yaml --out runs/qldpc_robustness_fresh`,
+  `python experiments/analyze_qldpc_sweep.py runs/qldpc_robustness_fresh/sweep.json --out runs/qldpc_robustness_fresh/analysis.json`,
+  `python -m qec_certify.eval.qldpc --config configs/qldpc_fallback.yaml --out runs/qldpc_fallback_fresh`, and
+  `python -m qec_certify.eval.qldpc --config configs/qldpc_retry.yaml --out runs/qldpc_retry_fresh`
+- Config: existing robustness/fallback/retry configs, rerun with the fresh-state Relay implementation
+  after the batch state-carryover fix. Outputs are written to new `_fresh` directories and do not
+  overwrite historical stateful-batch results.
+- Commit: `ef1027e` plus no code changes during the run; each JSON records the corresponding
+  `-dirty` provenance and relay-bp 0.2.2.
+- Outputs: `runs/qldpc_robustness_fresh/`, `runs/qldpc_fallback_fresh/qldpc.json`, and
+  `runs/qldpc_retry_fresh/qldpc.json` (untracked; regenerate with the commands above).
+- Outcome: the main scientific conclusions remain stable. At p=0.001 there are no disagreements.
+  At p=0.003 Relay has 0/200 in both seeds and paired p=0.0078125/0.0009766 over BP+LSD.
+  At p=0.005 Relay has 37/200 and 50/200, versus BP+LSD 99/200 and 112/200, with paired
+  p=6.42e-14 in both cells. BP+LSD fallback corrects seven errors and introduces none, paired
+  p=0.015625, while short retry corrects only three and is not significant, p=0.25.
+- Notes:
+  - Fresh pooled high-p Relay LER is 87/400=0.2175, versus the old 66/400=0.165. The second seed
+    changed from 43 to 50 errors. The fresh outputs supersede the old pooled value.
+  - Fresh fallback has 37 calls, 30/200 errors and p99 15248 ms; no-fallback Relay has 37/200 and
+    p99 6282 ms. Accuracy improvement does not solve the tail.
+  - Fresh retry has 34/200 errors and final 34 failures, with p99 7722 ms and p=0.25. It remains
+    statistically unsupported as an accuracy strategy.
+  - All core results used for the next manuscript draft should now cite the `_fresh` outputs or
+    the fresh-state parallel run, not pre-fix batch results.
+
+Fresh robustness:
+
+```
+ p      seed       BP+LSD errors   Relay errors   McNemar p   Relay mean/shot
+ 0.001  20261124   0/200           0/200          1.0         121 ms
+ 0.001  20261125   0/200           0/200          1.0          96 ms
+ 0.003  20261124   8/200           0/200          0.0078125   257 ms
+ 0.003  20261125  11/200           0/200          0.0009766   172 ms
+ 0.005  20261124  99/200          37/200          6.42e-14    2140 ms
+ 0.005  20261125 112/200          50/200          6.42e-14    1478 ms
+```
+
+Fresh fallback and retry:
+
+```
+ method              errors   paired versus no-fallback Relay   interpretation
+ bp_lsd fallback     30/200   7 corrections, p=0.015625         significant accuracy gain, large tail
+ short Relay retry   34/200   3 corrections, p=0.25             not significant
+```

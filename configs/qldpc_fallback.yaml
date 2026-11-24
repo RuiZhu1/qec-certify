@@ -1,0 +1,23 @@
+# High-p failure-aware hybrid: F32 Relay-BP, BP+LSD only on unsuccessful Relay shots.
+name: qldpc_fallback
+seed: 20261124
+reference_circuit: bb144_d12_p0005
+shots: 200
+confidence: 0.95
+decoders: [bp_lsd, relay_bp, relay_bp_fallback]
+fallback_decoder: bp_lsd
+relay_bp:
+  implementation: f32
+  gamma0: 0.125
+  pre_iter: 80
+  num_sets: 60
+  set_max_iter: 60
+  gamma_dist_interval: [-0.24, 0.66]
+  stop_nconv: 1
+bp_lsd:
+  max_iter: 100
+  lsd_order: 0
+  lsd_method: LSD_0
+  omp_thread_count: 1
+latency_shots: 10
+latency_warmup: 5

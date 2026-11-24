@@ -38,7 +38,7 @@ This project connects the two:
 
 | Tier | Reference | Scope | Meaning |
 |------|-----------|-------|---------|
-| 0 | MWPM and correlated MWPM (PyMatching), optionally belief-matching / BP+OSD | All sizes | Practical baseline |
+| 0 | MWPM and correlated MWPM (PyMatching), BP+OSD and Union-Find (DEM via ldpc), Relay-BP (public Rust implementation) | All sizes supported by each implementation | Practical baselines |
 | 0 | Empirical lookup table (majority vote per seen syndrome, MWPM elsewhere) | Same data as the learned decoder | Floor for learned decoders: memorisation without generalisation |
 | 1 | Exact maximum-likelihood decoder: full syndrome table (d=3, 5), or one exact DEM contraction per shot (code capacity up to d≈11) | Small to moderate codes, code-capacity first | True optimum on tractable instances |
 | 2 | Analytic or information-theoretic bounds | Model-dependent | Certificates (research goal) |
@@ -98,6 +98,7 @@ qec-certify/
 │   ├── sim/                    # Stim wrappers, dataset generation
 │   ├── decoders/
 │   │   ├── mwpm.py             # PyMatching wrapper (plain and correlated matching)
+│   │   ├── dem.py              # BP+OSD and Union-Find on arbitrary DEMs
 │   │   ├── lookup.py           # empirical lookup-table decoder
 │   │   ├── ml_exact.py         # exact ML decoder for small codes (full syndrome table)
 │   │   ├── ml_sweep.py         # exact ML per shot by sweeping the DEM (moderate codes)
@@ -133,7 +134,9 @@ qec-certify/
 - Compute noise descriptors; plot gap-closed vs. descriptor (RQ2)
 
 **M4. Circuit-level noise.**
-- Stim circuit-level memory experiments, d=3 to 7
+- Implemented: Stim rotated-surface memory with Clifford, idle, measurement and reset noise; channel-specific strengths, seeded qubit heterogeneity and drift; MWPM, correlated MWPM, BP+OSD and Union-Find (`configs/m4_circuit_level_d3.yaml`, `configs/m4_circuit_level_scaling.yaml`)
+- qLDPC first increment: checksummed public BB [[18,4,3]] and gross [[144,12,12]] reference circuits, BP+OSD and public Rust Relay-BP (`configs/qldpc_*.yaml`)
+- Next: larger statistically powered experiments, hardware-data adapters and optimized incremental streaming decoders
 - Tier 1 replaced by best available near-optimal reference (e.g. tensor-network or high-effort approximate ML) with clearly stated caveats
 
 **M5. Theory track (parallel, not code-gated).**
@@ -151,8 +154,8 @@ python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 ```
 
-Core dependencies: `stim`, `pymatching`, `numpy`, `scipy`, `torch`, `pyyaml`, `matplotlib`, `pytest`.
-Optional: `jax` (alternative model backend), `ldpc` (BP+OSD baseline), `quimb` or similar (tensor-network reference).
+Core dependencies: `stim`, `pymatching`, `ldpc`, `relay-bp`, `numpy`, `scipy`, `torch`, `pyyaml`, `matplotlib`, `pytest`.
+Optional: `jax` (alternative model backend), `quimb` or similar (tensor-network reference).
 
 ## 7. Quickstart
 
@@ -168,9 +171,104 @@ python -m qec_certify.train.run --config configs/m2_mlp_d3.yaml --out runs/m2_ml
 python -m qec_certify.eval.baselines --config configs/m3_biased.yaml --out runs/m3_biased --workers 8
 python -m qec_certify.eval.baselines --config configs/m3_correlated.yaml --out runs/m3_correlated --workers 8
 
+# 4. Circuit-level surface code (M4): MWPM, correlated MWPM, BP+OSD, Union-Find
+python -m qec_certify.eval.baselines --config configs/m4_circuit_level_d3.yaml --out runs/m4_circuit_level_d3
+python -m qec_certify.eval.baselines --config configs/m4_circuit_level_scaling.yaml --out runs/m4_circuit_level_scaling --workers 4
+python -m qec_certify.eval.baselines --config configs/m4_streaming_window.yaml --out runs/m4_streaming_window --workers 3
+python -m qec_certify.eval.baselines --config configs/m4_delayed_window.yaml --out runs/m4_delayed_window --workers 3
+python -m qec_certify.eval.baselines --config configs/m4_window_sweep.yaml --out runs/m4_window_sweep --workers 4
+python experiments/analyze_m4_window_sweep.py runs/m4_window_sweep/baselines.json --out runs/m4_window_sweep/paired_analysis.json
+
+# 5. Public qLDPC reference circuits: BP+OSD and Relay-BP
+python -m qec_certify.eval.qldpc --config configs/qldpc_bb18.yaml --out runs/qldpc_bb18
+python -m qec_certify.eval.qldpc --config configs/qldpc_gross.yaml --out runs/qldpc_gross
+python -m qec_certify.eval.qldpc_tune --config configs/qldpc_gross_tune.yaml --out runs/qldpc_gross_tune
+python -m qec_certify.eval.qldpc_tune --config configs/qldpc_realtime_tune.yaml --out runs/qldpc_realtime_tune
+python -m qec_certify.eval.qldpc_pareto --config configs/qldpc_pareto.yaml --out runs/qldpc_pareto
+python -m qec_certify.eval.qldpc_pareto --config configs/qldpc_precision.yaml --out runs/qldpc_precision
+python -m qec_certify.eval.qldpc_pareto --config configs/qldpc_early_fallback.yaml --out runs/qldpc_early_fallback
+python -m qec_certify.eval.qldpc_pareto --config configs/qldpc_alpha.yaml --out runs/qldpc_alpha
+python -m qec_certify.eval.qldpc_precision_sweep --config configs/qldpc_alpha_robustness.yaml --out runs/qldpc_alpha_robustness
+python -m qec_certify.eval.qldpc_precision_sweep --config configs/qldpc_tail_budget.yaml --out runs/qldpc_tail_budget
+python experiments/analyze_qldpc_precision.py runs/qldpc_precision/pareto.json --out runs/qldpc_precision/implementation_pairs.json
+python -m qec_certify.eval.qldpc_precision_sweep --config configs/qldpc_precision_robustness.yaml --out runs/qldpc_precision_robustness
+python -m qec_certify.eval.qldpc_precision_sweep --config configs/qldpc_parallel.yaml --out runs/qldpc_parallel
+python -m qec_certify.eval.qldpc_precision_sweep --config configs/qldpc_core_fresh.yaml --out runs/qldpc_core_fresh
+python -m qec_certify.eval.qldpc_precision_sweep --config configs/qldpc_profile.yaml --out runs/qldpc_profile
+python -m qec_certify.eval.qldpc_sweep --config configs/qldpc_robustness.yaml --out runs/qldpc_robustness
+python experiments/analyze_qldpc_sweep.py runs/qldpc_robustness/sweep.json --out runs/qldpc_robustness/analysis.json
+python -m qec_certify.eval.qldpc --config configs/qldpc_fallback.yaml --out runs/qldpc_fallback
+python -m qec_certify.eval.qldpc --config configs/qldpc_retry.yaml --out runs/qldpc_retry
+
 # Figures: scripts in experiments/ read these outputs
 python experiments/plot_m3_structure.py runs/m3_biased/baselines.json runs/m3_correlated/baselines.json --out runs/m3_structure.png
 ```
+
+Circuit-level JSON results include `experiment` and `rounds`. `ler_per_round` and its CI use
+`1 - (1 - LER)**(1/rounds)`, explicitly labelled `independent_equal_hazard`; the original
+whole-experiment `ler` remains authoritative. When `latency_shots` is set, each decoder also
+reports offline batch-of-one p50/p95/p99 latency and throughput. These timings include Python
+call overhead and are not per-round hardware-streaming measurements.
+
+When `streaming_latency_shots` is set on a circuit-level experiment, a causal-replay adapter
+feeds one detector round at a time and zero-fills the unknown future. Its final prediction is
+tested to equal the offline decoder, and intermediate predictions do not depend on future
+rounds. `streaming_performance` reports per-round p50/p95/p99 latency, throughput and, when
+`round_period_us` is set, fixed-rate-arrival backlog estimates. This reference adapter replays
+the full history after every round, so its work grows quadratically over a shot; it is not an
+optimized incremental decoder. Union-Find is marked `unsupported_inconsistent_prefixes`
+because zero-filled prefixes need not be valid DEM syndromes.
+
+`streaming_method: sliding_window` instead builds a local DEM over the latest `window_rounds`
+for MWPM and correlated MWPM. Cross-boundary mechanisms are projected onto in-window detectors
+and marked `projected_dem_boundary`; a full-shot window is marked `exact_full_history` and must
+match offline predictions. Approximate window accuracy is reported separately as
+`streaming_ler`, while per-round timing uses `sliding_window_mwpm_w<W>` as its mode. Other
+algorithms are explicitly marked unsupported rather than silently falling back to replay.
+
+`streaming_method: delayed_commit` uses overlapping windows and matched-edge outputs to commit
+only fully internal errors from the oldest round. Newer and boundary-crossing components remain
+in the tail, and committed logical flips are XORed with that tail. Its partial-window mode is
+`delayed_commit_boundary`, a causal heuristic rather than exact incremental MWPM; accuracy is
+again reported separately as `streaming_ler`. Window widths can be lists, including per-distance
+lists; all widths at a distance reuse the same test shots. `streaming_comparison` records total
+prediction disagreements and the two paired directions `offline_correct_streaming_wrong` and
+`offline_wrong_streaming_correct`, enabling McNemar-style comparisons against full history.
+The separate `eval.qldpc` runner loads checksummed public BB reference circuits and records
+their provenance. When BP+OSD and Relay-BP are both selected, `paired_comparison` reports their
+per-shot transitions and exact McNemar p-value; single-decoder runs leave it null.
+`eval.qldpc_tune` evaluates predeclared Relay-BP candidates only on the validation split, selects
+by validation errors, measured latency, iteration budget and name in that order, and only then
+runs the held-out test split. `tuning.json` preserves all candidates, the selection rule and the
+separate validation/test seeds. Setting `max_validation_p99_ms` restricts selection to candidates
+within that validation latency budget when possible; if none qualify, the lowest-p99 candidate is
+selected with `latency_budget.met: false` rather than being presented as meeting the budget.
+`eval.qldpc_pareto` instead evaluates every validation-nondominated accuracy/latency candidate
+on the same held-out shots with a single baseline evaluation, preserving the full tradeoff.
+With `evaluate_all: true`, even dominated candidates are tested for numerical-implementation
+comparisons. Pareto candidates may set `decoder: relay_bp_fallback` to evaluate early BP+LSD
+takeover at different Relay budgets with shared shots. Relay-BP supports `implementation: f32/i32/i64`
+and optional `alpha`/`alpha_iteration_scaling_factor` convergence controls; unsuccessful native decodes fall
+back to no-flip and are reported through `decode_failures`, `decode_success_rate` and iteration
+statistics rather than being returned as valid corrections. `eval.qldpc_precision_sweep`
+compares those implementations across noise strengths and independent seeds on shared shots,
+with per-cell checkpoints and per-implementation decode diagnostics. Serial Relay prediction uses
+a fresh native decoder per shot to prevent state carryover; `parallel: true` uses independent
+clones through `ObservableDecoderRunner`. Batch `evaluation_seconds` and batch-of-one latency are
+reported separately, since parallel throughput does not imply lower single-shot latency.
+`profile_shots` adds iteration percentiles, success/failure-specific latency and serial
+initialization/native-decode/Python-overhead breakdown; parallel clone setup is reported as
+unavailable rather than guessed.
+`relay_bp_fallback` invokes
+BP+LSD only for unsuccessful Relay shots and reports `fallback_calls`, `fallback_rate` and the
+resulting end-to-end latency. With `fallback_decoder: relay_bp`, a shorter independent-seed Relay
+retry is used instead; `fallback_relay_bp` sets its parameters and final success/failure is
+reported separately.
+`eval.qldpc_sweep` holds those selected parameters fixed across
+reference noise strengths and independent experiment seeds, with generic pairwise McNemar
+comparisons; `experiments/analyze_qldpc_sweep.py` pools shots only for descriptive summaries.
+The sweep CLI checkpoints every completed cell to `cells.jsonl` and automatically skips those
+cells when rerun, so long experiments can resume without reusing partial decoder results.
 
 Planned: transformer decoders (`configs/m2_transformer_d3.yaml`) and a separate report
 command (`python -m qec_certify.eval.report`).
